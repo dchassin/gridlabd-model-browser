@@ -1,2 +1,3 @@
 marimo
 pandas
+plotly
