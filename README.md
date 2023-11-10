@@ -27,10 +27,4 @@ marimo run viewer.py
 
 ## Example file
 
-You can download one of the https://arras.energy/gridlabd-models
-using the `gridlabd model get` command, e.g.,
-to download the IEEE 123 model, run
-
-~~~
-gridlabd model get IEEE/123
-~~~
+The file `example.json` can be used to try it out.
