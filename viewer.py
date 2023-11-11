@@ -29,60 +29,9 @@ def __(filename, mo):
 
 
 @app.cell
-def __(err, json, mo, pd, set_status):
+def __(change_labels, change_satellite, get_file, mo):
     #
-    # Model data load
-    #
-    def load_glm(upload):
-        if upload is None:
-            set_status("Select a file to view")
-            return pd.DataFrame({})
-        try:
-            glm = json.loads(upload[0].contents.decode())
-            assert glm["application"] == "gridlabd"
-            assert glm["version"] >= "4.3.3"
-            data = pd.DataFrame(glm["objects"]).transpose()
-            data.index.name = "name"
-            data.reset_index(inplace=True)
-            if "latitude" in data and "longitude" in data:
-                data['latitude'] = [float(x) for x in data['latitude']]
-                data['longitude'] = [float(x) for x in data['longitude']]
-                nodes = data.loc[~data["latitude"].isnull()&~data["longitude"].isnull()]
-                lines = data.loc[~data["from"].isnull()&~data["to"].isnull()]
-            else:
-                nodes = None
-                lines = None
-            data.set_index(["class","name"],inplace=True)
-            classes = {}
-            for oclass in data.index.get_level_values(0).unique():
-                classes[oclass] = data.loc[oclass].dropna(axis=1,how='all')
-            set_status(f"File '{upload[0].name}' contains {len(data)} objects.")
-            return dict(
-                data = data,
-                classes = classes,
-                nodes = nodes,
-                lines = lines)
-        except Exception as err:
-            set_status(f"Exception: {err}!")
-
-    get_file, set_file = mo.state(load_glm(None))
-
-    return get_file, load_glm, set_file
-
-
-@app.cell
-def __(mo):
-    #
-    # State variables
-    #
-    get_status, set_status = mo.state("")
-    return get_status, set_status
-
-
-@app.cell
-def __(get_file, get_view, mo, set_map):
-    #
-    # Model data display
+    # Display options
     #
     _data = get_file()
     if _data is None:
@@ -91,36 +40,130 @@ def __(get_file, get_view, mo, set_map):
         selector = mo.md("No GridLAB-D objects to view")
     else:
         keys = list(_data["classes"])
-        class_select = mo.ui.dropdown(options = keys,
-                                      allow_select_none = False,
-                                      value = keys[0],
-                                      )
+        class_select = mo.ui.dropdown(
+            options=keys,
+            allow_select_none=False,
+            value=keys[0],
+        )
         with_header = mo.ui.switch(value=False)
-        map_type = mo.ui.switch(value=False,on_change=set_map)
-        selector = mo.hstack([mo.md("Select object class to display: "),
-                   class_select,
-                   mo.md("Show header data"),
-                   with_header,
-                   mo.md("Satellite view:") if get_view() else "",
-                   map_type if get_view() else "",
-                  ],justify='start')
+        map_type = mo.ui.switch(value=False, on_change=change_satellite)
+        with_labels = mo.ui.switch(value=False, on_change=change_labels)
+        selector = mo.hstack(
+            [
+                mo.md("Select object class to display: "),
+                class_select,
+                mo.md("Show header data"),
+                with_header,
+                mo.md("Show object labels"),
+                with_labels,
+                mo.md("Satellite view:"),
+                map_type,
+            ],
+            justify="start",
+        )
     selector
-    return class_select, keys, map_type, selector, with_header
+    return class_select, keys, map_type, selector, with_header, with_labels
+
+
+@app.cell
+def __(data_view, get_mapview, mo, table_view):
+    #
+    # Show the chosen view
+    #
+    main_view = mo.tabs({
+        "Objects": table_view,
+        "Properties": data_view,
+        "Map": get_mapview(),
+    })
+    main_view
+    return main_view,
+
+
+@app.cell
+def __(get_status, mo):
+    #
+    # Status information
+    #
+    mo.md(f"""
+    ---
+
+    {get_status()}
+    """)
+    return
+
+
+@app.cell
+def __(class_select, get_file, mo, select_object, set_status, with_header):
+
+    #
+    # Objects view
+    #
+
+    table_view = None
+
+    def update_table():
+        global table_view
+        _data = get_file()
+        if not _data is None and "classes" in _data and len(_data["classes"]) > 0 and class_select.selected_key:
+            _classes = _data["classes"]
+            table_data = _classes[class_select.value].copy()
+            if with_header.value == False:
+                table_data.drop(["id","rank","clock","rng_state","guid","flags","parent"],inplace=True,axis=1,errors='ignore')
+            table_view = mo.ui.table(table_data,
+                                     pagination = True,
+                                     selection = 'single',
+                                     on_change = select_object,
+                                     )
+            set_status(f"Class '{class_select.value}' has {len(table_data)} objects.")
+        else:
+            table_view = mo.md("None")
+
+    update_table()
+    return table_view, update_table
+
+
+@app.cell
+def __(class_select, get_title, glm, mo, set_property):
+    #
+    # Properties view
+    #
+    get_object, set_object = mo.state(None)
+
+    data_view = None
+
+    def select_object(x):
+        global data_view
+        set_object(x)
+        if not x is None:
+            rows = mo.vstack([mo.ui.text(label=get_title(n),
+                                         disabled = (n in glm["header"]),
+                                         value=str(row.iloc[0]),
+                                         on_change = lambda x:set_property(class_select.value,n,x),
+                                        ) for n,row in get_object().transpose().iterrows()])
+            data_view = f"""
+    <table bgcolor="white">
+    <caption>{get_title(class_select.value)} <b>{x.index[0]}</b><hr/></caption>
+    <tr><td>{rows}</td><tr>
+    </table>
+    """
+        else:
+            data_view = mo.md("None")
+    return data_view, get_object, select_object, set_object
 
 
 @app.cell
 def __(get_file, mo, px):
     #
-    # Map data
+    # Map view
     #
-    def get_map(satellite):
+    def load_map():
         if get_file() is None or "data" not in get_file() or len(get_file()["data"]) == 0:
             return None
-        data = get_file()["data"]
         nodes = get_file()["nodes"]
-        lines = get_file()["lines"]
         if nodes is None or len(nodes) == 0:
             return None
+        lines = get_file()["lines"]
+        data = get_file()["data"]
 
         # nodes
         map = px.scatter_mapbox(
@@ -128,6 +171,7 @@ def __(get_file, mo, px):
             lat = nodes['latitude'],
             lon = nodes['longitude'],
             hover_name = nodes['name'],
+            text = nodes['name'] if get_labels() else None,
             zoom = 15,
             # TODO: add hover_data flags, e.g., dict(field:bool,...)
         )
@@ -153,8 +197,8 @@ def __(get_file, mo, px):
                            subplot = 'mapbox',
                            type = 'scattermapbox',
                            showlegend = False))
-        
-        if satellite:
+
+        if get_satellite():
             map.update_layout(
                 mapbox_style="white-bg",
                 mapbox_layers=[
@@ -169,65 +213,104 @@ def __(get_file, mo, px):
         else:    
             map.update_layout(mapbox_style="open-street-map")
         map.update_layout(margin={"r":0,"t":0,"l":0,"b":0})
-        return map
+        set_mapview(map)
 
-    def set_map(satellite):
-        set_view(get_map(satellite))
+    get_labels, set_labels = mo.state(False)
+    get_satellite, set_satellite = mo.state(False)
+    get_mapview, set_mapview = mo.state(None)
 
-    get_view, set_view = mo.state(get_map(False))
+    def change_labels(x):
+        set_labels(x)
+        load_map()
 
-    return get_map, get_view, set_map, set_view
+    def change_satellite(x):
+        set_satellite(x)
+        load_map()
 
-
-@app.cell
-def __(class_select, get_file, mo, set_status, with_header):
-    #
-    # Table data display
-    #
-    def select_item(x):
-        return
-
-    _data = get_file()
-    if not _data is None and "classes" in _data and len(_data["classes"]) > 0 and class_select.selected_key:
-        _classes = _data["classes"]
-        values = _classes[class_select.value].copy()
-        if with_header.value == False:
-            values.drop(["id","rank","clock","rng_state","guid","flags","parent"],inplace=True,axis=1,errors='ignore')
-        table_view = mo.ui.table(values,pagination=True,selection='single',on_change=select_item)
-        set_status(f"Class '{class_select.value}' has {len(values)} objects.")
-    else:
-        table_view = None
-
-    return select_item, table_view, values
+    load_map()
+    return (
+        change_labels,
+        change_satellite,
+        get_labels,
+        get_mapview,
+        get_satellite,
+        load_map,
+        set_labels,
+        set_mapview,
+        set_satellite,
+    )
 
 
 @app.cell
-def __(get_view, mo, table_view):
+def __(err, json, mo, pd, set_status):
     #
-    # Show the chosen view
+    # Data load
     #
-    if get_view():
-        result = mo.tabs({
-            "Table" : table_view,
-            "Map" : get_view(),
-        })
-    else:
-        result = table_view
-    result
-    return result,
+    glm = None
+
+    def load_glm(upload):
+        if upload is None:
+            set_status("Select a file to view")
+            return pd.DataFrame({})
+        try:
+            global glm
+            glm = json.loads(upload[0].contents.decode())
+            result = refresh_model()
+            set_status(f"File '{upload[0].name}' contains {len(result['data'])} objects.")
+            return result
+        except Exception as err:
+            set_status(f"Exception: {err}!")
+
+    def set_property(obj,prop,value):
+        glm["objects"][obj][prop] = value
+        set_file(refresh_model())
+        
+    def refresh_model():
+        assert glm["application"] == "gridlabd"
+        assert glm["version"] >= "4.3.3"
+        data = pd.DataFrame(glm["objects"]).transpose()
+        data.index.name = "name"
+        data.reset_index(inplace=True)
+        if "latitude" in data and "longitude" in data:
+            data['latitude'] = [float(x) for x in data['latitude']]
+            data['longitude'] = [float(x) for x in data['longitude']]
+            nodes = data.loc[~data["latitude"].isnull()&~data["longitude"].isnull()]
+            lines = data.loc[~data["from"].isnull()&~data["to"].isnull()]
+        else:
+            nodes = None
+            lines = None
+        data.set_index(["class","name"],inplace=True)
+        classes = {}
+        for oclass in data.index.get_level_values(0).unique():
+            classes[oclass] = data.loc[oclass].dropna(axis=1,how='all')
+        return dict(
+            data = data,
+            classes = classes,
+            nodes = nodes,
+            lines = lines)
+
+    get_file, set_file = mo.state(load_glm(None))
+    return get_file, glm, load_glm, refresh_model, set_file, set_property
 
 
 @app.cell
-def __(get_status, mo):
+def __():
     #
-    # Status information
+    # Utilities
     #
-    mo.md(f"""
-    ---
+    def get_title(x):
+        import re
+        return re.sub('[^A-Za-z0-9]',' ',x).title()
+    return get_title,
 
-    {get_status()}
-    """)
-    return
+
+@app.cell
+def __(mo):
+    #
+    # Status variables
+    #
+    get_status, set_status = mo.state("")
+    return get_status, set_status
 
 
 @app.cell
