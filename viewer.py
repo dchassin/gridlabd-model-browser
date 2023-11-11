@@ -135,11 +135,11 @@ def __(class_select, get_title, glm, mo, set_property):
         global data_view
         set_object(x)
         if not x is None:
-            rows = mo.vstack([mo.ui.text(label=get_title(n),
-                                         disabled = (n in glm["header"]),
+            rows = mo.vstack([mo.ui.text(label=get_title(prop),
+                                         disabled = (prop in glm["header"]),
                                          value=str(row.iloc[0]),
-                                         on_change = lambda x:set_property(class_select.value,n,x),
-                                        ) for n,row in get_object().transpose().iterrows()])
+                                         on_change = lambda value:set_property(x.index[0],prop,value),
+                                        ) for prop,row in get_object().transpose().iterrows()])
             data_view = f"""
     <table bgcolor="white">
     <caption>{get_title(class_select.value)} <b>{x.index[0]}</b><hr/></caption>
