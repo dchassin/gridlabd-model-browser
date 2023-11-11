@@ -66,7 +66,7 @@ def __(change_labels, change_satellite, get_file, mo):
 
 
 @app.cell
-def __(data_view, get_mapview, mo, table_view):
+def __(data_view, get_mapview, mo, simulation_view, table_view):
     #
     # Show the chosen view
     #
@@ -74,6 +74,7 @@ def __(data_view, get_mapview, mo, table_view):
         "Objects": table_view,
         "Properties": data_view,
         "Map": get_mapview(),
+        "Simulation" : simulation_view,
     })
     main_view
     return main_view,
@@ -166,15 +167,27 @@ def __(get_file, mo, px):
         data = get_file()["data"]
 
         # nodes
-        map = px.scatter_mapbox(
-            # hover_data = nodes.index,
-            lat = nodes['latitude'],
-            lon = nodes['longitude'],
-            hover_name = nodes['name'],
-            text = nodes['name'] if get_labels() else None,
-            zoom = 15,
-            # TODO: add hover_data flags, e.g., dict(field:bool,...)
-        )
+        # map = px.scatter_mapbox(
+        #     lat = nodes['latitude'],
+        #     lon = nodes['longitude'],
+        #     hover_name = nodes['name'],
+        #     text = nodes['name'] if get_labels() else None,
+        #     zoom = 15,
+        #     # TODO: add hover_data flags, e.g., dict(field:bool,...)
+        # )
+        map = px.scatter_mapbox(nodes,
+                                lat = 'latitude',
+                                lon = 'longitude',
+                                hover_name = 'name',
+                                text = 'name' if get_labels() else None,
+                                zoom = 15,
+                                hover_data = dict(
+                                    latitude=False,
+                                    longitude=False,
+                                    nominal_voltage=True,
+                                    phases=True,
+                                ),
+                               )
 
         # lines
         latlon = nodes.reset_index()[['name','latitude','longitude']].set_index('name')
@@ -189,7 +202,7 @@ def __(get_file, mo, px):
         lons = [None] * 3 * len(valid)
         lons[0::3] = [latlon[x[1]][1] for x in valid]
         lons[1::3] = [latlon[x[2]][1] for x in valid]
-        map.add_trace(dict(hovertemplate = names,
+        map.add_trace(dict(hoverinfo = 'skip',
                            lat = lats,
                            lon = lons,
                            line = dict(color='#636efa'),
@@ -264,7 +277,7 @@ def __(err, json, mo, pd, set_status):
     def set_property(obj,prop,value):
         glm["objects"][obj][prop] = value
         set_file(refresh_model())
-        
+
     def refresh_model():
         assert glm["application"] == "gridlabd"
         assert glm["version"] >= "4.3.3"
@@ -294,6 +307,29 @@ def __(err, json, mo, pd, set_status):
 
 
 @app.cell
+def __(glm, json, mo, subprocess):
+    simulation_view = None
+
+    def run_simulation(x=None):
+        output = "Click <b>Run</b> to start simulation"
+        global simulation_view
+        if type(glm) is dict and "objects" in glm:
+            with open("model.json","w") as fh:
+                json.dump(glm,fh,indent=4)
+                result = subprocess.run(["gridlabd","model.json"],stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
+                output = f"""GridLAB-D run {'succeeded' if result.returncode == 0 else 'failed'} (exit code {result.returncode})
+    ```
+    {result.stdout.decode()}
+    ```
+    """
+        simulation_view = mo.vstack([run_button,mo.md(output)])
+
+    run_button = mo.ui.button(label = "Run",on_click=run_simulation)
+    run_simulation()
+    return run_button, run_simulation, simulation_view
+
+
+@app.cell
 def __():
     #
     # Utilities
@@ -319,13 +355,13 @@ def __():
     # Requirements
     #
     import os, sys, json
-    import subprocess
+    import asyncio
     import marimo as mo
     import pandas as pd
     import numpy as np
     import plotly.express as px
     import plotly.graph_objects as go
-    return go, json, mo, np, os, pd, px, subprocess, sys
+    return asyncio, go, json, mo, np, os, pd, px, sys
 
 
 if __name__ == "__main__":
