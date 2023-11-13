@@ -70,7 +70,8 @@ def __(mo, start, start_command):
 
 @app.cell
 def __(mo):
-    results_preview = mo.ui.radio(["Table","Graph"],value="Table",label="Preview results as")
+    _views = ["Table","Graph","Map"]
+    results_preview = mo.ui.radio(_views,value="Table",label="Preview results as")
     results_preview
     return results_preview,
 
@@ -98,7 +99,7 @@ def __(alt, dt, mo, outputs, pd, results_preview):
     if _tabs:
         results = mo.tabs(_tabs)
     else:
-        results = mo.md("")
+        results = mo.md("No results to display")
 
     return file, results
 
