@@ -1,106 +1,120 @@
 import marimo
 
-__generated_with = "0.1.39"
+__generated_with = "0.1.47"
 app = marimo.App(width="full")
 
 
 @app.cell
-def __(network):
-    network
-    return
-
-
-@app.cell
-def __(city, mo, state):
-    mo.hstack([state,city],justify="start")
-    return
-
-
-@app.cell
-def __(mo, starttime, stoptime, timezone):
-    mo.hstack([starttime,stoptime,timezone],justify="start")
+def __(
+    city,
+    classes,
+    clock,
+    clock_preview,
+    fields,
+    gridlabd_copyright,
+    gridlabd_license,
+    gridlabd_version,
+    interval,
+    loads,
+    mo,
+    network,
+    recorder_preview,
+    recorders,
+    results,
+    results_preview,
+    start_preview,
+    starttime,
+    state,
+    stoptime,
+    timezone,
+):
+    mo.vstack([
+        mo.md(gridlabd_version[0]),
+        mo.tabs({
+            "Network" : network,
+            "Weather" : mo.hstack([state,city],justify="start"),
+            "Clock" : mo.vstack([
+                mo.hstack([starttime,stoptime,timezone],justify="start"),
+                clock_preview,
+                clock,
+                ]),
+            "Output" : mo.vstack([
+                mo.vstack([mo.hstack([classes,fields,interval],justify='start'),loads]),
+                recorder_preview,
+                recorders,
+                ]),
+            "Results" : mo.vstack([
+                start_preview,
+                results_preview,
+                results,
+                ]),
+            "About" : mo.vstack([
+                mo.Html("<BR/>".join(gridlabd_license)),
+                ]),
+            "Help" : mo.vstack([
+                mo.md("See [https://docs.gridlabd.us/](https://docs.gridlabd.us/) for details."),
+                ]),
+            }),
+        mo.md("<BR/><BR/><BR/><BR/>"),
+        mo.md("---"),
+        mo.md("<BR/>".join([x for x in gridlabd_copyright if x.startswith("Copyright")])),
+        ])
     return
 
 
 @app.cell
 def __(mo):
     clock_preview = mo.ui.switch(label="Show clock preview")
-    clock_preview
+
     return clock_preview,
-
-
-@app.cell
-def __(clock):
-    clock
-    return
-
-
-@app.cell
-def __(classes, fields, interval, loads, mo):
-    mo.vstack([mo.hstack([classes,fields,interval],justify='start'),loads])
-    return
 
 
 @app.cell
 def __(mo):
     recorder_preview = mo.ui.switch(label="Show recorder preview")
-    recorder_preview
     return recorder_preview,
-
-
-@app.cell
-def __(recorders):
-    recorders
-    return
 
 
 @app.cell
 def __(clock, mo, recorders, start, start_command):
     if start_command and (not hasattr(clock,"value") or clock.value) and (not hasattr(recorders,"value") or recorders.value):
-        _start = mo.vstack([
+        start_preview = mo.vstack([
             mo.md("Ready to start simulation using command"),
             mo.md(f"`{start_command}`"),
             start,
             ])
     else:
-        _start = mo.md("Simulation is not ready to start")
-    _start
-    return
+        start_preview = mo.md("Simulation is not ready to start")
+    return start_preview,
 
 
 @app.cell
 def __(mo):
     _views = ["Table","Graph","Map"]
     results_preview = mo.ui.radio(_views,value="Table",label="Preview results as")
-    results_preview
     return results_preview,
-
-
-@app.cell
-def __(results):
-    results
-    return
 
 
 @app.cell
 def __(alt, dt, mo, outputs, pd, results_preview):
     _tabs = {}
-    if results_preview.value == "Table":
-        for file in outputs:
-            _tabs[file] = mo.ui.table(pd.read_csv(file), pagination=True, page_size=10)
-    elif results_preview.value == "Graph":
-        for file in outputs:
-            _data = pd.read_csv(file,converters={"timestamp":lambda x:dt.datetime.strptime(x,"%Y-%m-%d %H:%M:%S %Z")})
-            _chart = alt.Chart(_data).mark_point().encode(
-                    x = _data.columns[0],
-                    y = _data.columns[1],
-                )
-            _tabs[file] = mo.ui.altair_chart(_chart)
+    for file in outputs:
+        try:
+            if results_preview.value == "Table":
+                _tabs[file] = mo.ui.table(pd.read_csv(file), pagination=True, page_size=10)
+            elif results_preview.value == "Graph":
+                _data = pd.read_csv(file,converters={"timestamp":lambda x:dt.datetime.strptime(x,"%Y-%m-%d %H:%M:%S %Z")})
+                _chart = alt.Chart(_data).mark_point().encode(
+                        x = _data.columns[0],
+                        y = _data.columns[1],
+                    )
+                _tabs[file] = mo.ui.altair_chart(_chart)
+        except:
+            pass
     if _tabs:
         results = mo.tabs(_tabs)
     else:
         results = mo.md("No results to display")
-
     return file, results
 
 
@@ -296,7 +310,10 @@ def __(sp, sys):
         if r.returncode != 0:
             raise Exception(f"gridlabd error code {r.returncode}")
         return r.stdout.strip().split("\n")
-    return gridlabd,
+    gridlabd_version = gridlabd("--version")
+    gridlabd_copyright = gridlabd("--copyright")
+    gridlabd_license = gridlabd("--license")
+    return gridlabd, gridlabd_copyright, gridlabd_license, gridlabd_version
 
 
 @app.cell
