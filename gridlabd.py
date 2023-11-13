@@ -9,7 +9,6 @@ def __(
     city,
     classes,
     clock,
-    clock_preview,
     fields,
     gridlabd_copyright,
     gridlabd_license,
@@ -17,8 +16,8 @@ def __(
     interval,
     loads,
     mo,
+    model_stats,
     network,
-    recorder_preview,
     recorders,
     results,
     results_preview,
@@ -27,20 +26,26 @@ def __(
     state,
     stoptime,
     timezone,
+    weather_stats,
 ):
     mo.vstack([
         mo.md(gridlabd_version[0]),
+        mo.md("---"),
         mo.tabs({
-            "Network" : network,
-            "Weather" : mo.hstack([state,city],justify="start"),
+            "Network" : mo.vstack([
+                network,
+                mo.ui.table(model_stats,selection=None) if not model_stats is None else mo.md("No model info")
+                ]),
+            "Weather" : mo.vstack([
+                mo.hstack([state,city],justify="start"),
+                mo.ui.table(weather_stats,selection=None) if not weather_stats is None else mo.md("No weather info"),
+                ]),
             "Clock" : mo.vstack([
                 mo.hstack([starttime,stoptime,timezone],justify="start"),
-                clock_preview,
                 clock,
                 ]),
             "Output" : mo.vstack([
                 mo.vstack([mo.hstack([classes,fields,interval],justify='start'),loads]),
-                recorder_preview,
                 recorders,
                 ]),
             "Results" : mo.vstack([
@@ -48,11 +53,14 @@ def __(
                 results_preview,
                 results,
                 ]),
+            "Map" : mo.vstack([
+                mo.md("No geodata found")
+                ]),
             "About" : mo.vstack([
                 mo.Html("<BR/>".join(gridlabd_license)),
                 ]),
             "Help" : mo.vstack([
-                mo.md("See [https://docs.gridlabd.us/](https://docs.gridlabd.us/) for details."),
+                mo.md(f"""<iframe height="800px" width="100%" src="https://docs.gridlabd.us" title="GridLAB-D Documentation"></iframe>"""),
                 ]),
             }),
         mo.md("<BR/><BR/><BR/><BR/>"),
@@ -60,19 +68,6 @@ def __(
         mo.md("<BR/>".join([x for x in gridlabd_copyright if x.startswith("Copyright")])),
         ])
     return
-
-
-@app.cell
-def __(mo):
-    clock_preview = mo.ui.switch(label="Show clock preview")
-
-    return clock_preview,
-
-
-@app.cell
-def __(mo):
-    recorder_preview = mo.ui.switch(label="Show recorder preview")
-    return recorder_preview,
 
 
 @app.cell
@@ -90,7 +85,7 @@ def __(clock, mo, recorders, start, start_command):
 
 @app.cell
 def __(mo):
-    _views = ["Table","Graph","Map"]
+    _views = ["Table","Graph"]
     results_preview = mo.ui.radio(_views,value="Table",label="Preview results as")
     return results_preview,
 
@@ -166,20 +161,23 @@ def __(city, dt, gridlabd, io, mo, pd):
     #
     # Set the clock
     #
+    weather_stats = None
     if city.value:
         gridlabd("weather","get",city.value)
-        _info = pd.read_csv(io.StringIO("\n".join(gridlabd("weather","info",city.value))))
-        _locale = gridlabd("timezone",f"{_info.iloc[0]['Latitude']},{_info.iloc[0]['Longitude']}")[0]
+        weather_stats = pd.read_csv(io.StringIO("\n".join(gridlabd("weather","info",city.value)))).transpose()
+        weather_stats.index.name = "Property"
+        weather_stats.columns = ["Value"]
+        _locale = gridlabd("timezone",f"{weather_stats.loc['Latitude']['Value']},{weather_stats.loc['Longitude']['Value']}")[0]
     else:
         _locale = ""
     timezone = mo.ui.text(value=_locale,label="Timezone",placeholder="Enter timezone")
     starttime = mo.ui.date(start="2000-01-01",stop="2999-12-31",value=f"{dt.datetime.now().year}-01-01",label="Start date")
     stoptime = mo.ui.date(start="2000-01-01",stop="2999-12-31",value=f"{dt.datetime.now().year+1}-01-01",label="Stop date")
-    return starttime, stoptime, timezone
+    return starttime, stoptime, timezone, weather_stats
 
 
 @app.cell
-def __(clock_preview, mo, starttime, stoptime, timezone):
+def __(mo, starttime, stoptime, timezone):
     #
     # Get clock information
     #
@@ -189,26 +187,37 @@ def __(clock_preview, mo, starttime, stoptime, timezone):
         stoptime "{stoptime.value} 00:00:00";
     }}
     """
-    clock = mo.ui.text_area(value=_clock,full_width=True,label="Clock preview") if clock_preview.value else mo.md("")
+    clock = mo.ui.text_area(value=_clock,full_width=True,label="Clock preview")
     return clock,
 
 
 @app.cell
-def __(city, gridlabd, json, network, os, state, timezone):
+def __(gridlabd_bin, json, network, os, pd, re):
     #
     # Compile the model
     #
     model = None
-    if network.value and state.value and city.value and timezone.value:
+    model_stats = None
+    if network.value: # and state.value and city.value and timezone.value:
         glmfile = f"{os.path.basename(network.value)}.glm"
         jsonfile = f"{os.path.basename(network.value)}.json"
-        gridlabd("-C",glmfile,"-o",jsonfile)
+        gridlabd_bin("-C",glmfile,"-o",jsonfile)
         with open(jsonfile,"r") as fh:
             model = json.load(fh)
             assert(model["application"]=="gridlabd")
             assert(model["version"]>="4.3.3")
+            _stats = {}
+            for obj,data in model["objects"].items():
+                if data["class"] in _stats:
+                    _stats[data["class"]] += 1
+                else:
+                    _stats[data["class"]] = 1
+            model_stats = pd.concat([pd.DataFrame([(re.sub("[^A-Za-z0-9]"," ",x).title(),y)]) for x,y in sorted(_stats.items())]).set_index(0)
+            model_stats.index.name = "Class Name"
+            model_stats.columns = ["Object Count"]
+            # model_stats[0] = [x.re("[^A-Za-z0-9"," ").title() for x in models_stats[0]]
 
-    return fh, glmfile, jsonfile, model
+    return data, fh, glmfile, jsonfile, model, model_stats, obj
 
 
 @app.cell
@@ -238,7 +247,7 @@ def __(mo, model):
 
 
 @app.cell
-def __(fields, interval, loads, mo, recorder_preview):
+def __(fields, interval, loads, mo):
     #
     # Generate recorders
     #
@@ -255,12 +264,12 @@ def __(fields, interval, loads, mo, recorder_preview):
             file "{name}.csv";
         }}
         """
-    recorders = mo.ui.text_area(value=_recorders,full_width=True,label="Recorders") if recorder_preview.value else mo.md("")
+    recorders = mo.ui.text_area(value=_recorders,full_width=True,label="Recorders")
     return name, recorders
 
 
 @app.cell
-def __(clock, glmfile, loads, mo, model, os, recorders):
+def __(city, clock, glmfile, loads, mo, model, os, recorders, state):
     #
     # Run the simulation
     #
@@ -271,17 +280,24 @@ def __(clock, glmfile, loads, mo, model, os, recorders):
 
     def _start(x):
         start = mo.ui.button(label="Stop",on_click=_stop)
-        with open("recorders.glm","w") as fh:
+        with open("_recorders.glm","w") as fh:
             fh.write(recorders.value)
-        with open("clock.glm","w") as fh:
+        with open("_clock.glm","w") as fh:
             fh.write(clock.value)
+        with open("_weather.glm","w") as fh:
+            fh.write(f"""module climate;
+    #weather get {city.value}
+    object climate {{
+        tmyfile "${{GLD_ETC}}/weather/US/{state.value}-{city.value}";
+    }}
+    """)
         with mo.redirect_stderr():
             with mo.redirect_stdout():
                 os.system(start_command)
         mo.ui.button(label="Start",on_click=_start)
 
     if model:# and clock.value and recorders.value:
-        start_command = f"gridlabd {glmfile} clock.glm recorders.glm -D keep_progress=TRUE"
+        start_command = f"gridlabd {glmfile} _weather.glm _clock.glm _recorders.glm -D keep_progress=TRUE"
         outputs = [f"{x}.csv" for x in loads.value.index]
     else:
         start_command = ""
@@ -292,7 +308,25 @@ def __(clock, glmfile, loads, mo, model, os, recorders):
 
 
 @app.cell
-def __(sp, sys):
+def __(os, sp, sys):
+    def gridlabd_bin(*args,**kwargs):
+        """Run gridlabd
+        Arguments:
+        - *args: command arguments
+        - **kwargs: global definitions (placed before command arguments)
+        """
+        cmd = ["gridlabd.bin" if "GLD_BIN" in os.environ else "gridlabd"]
+        for name,value in kwargs.items():
+            cmd.extend(["-D", f"{name}={value}"])
+        cmd.extend(args)
+        print(f"[Running '{' '.join(cmd)}']",file=sys.stdout)
+        # with mo.status.spinner(f"Running command '{cmd}'"):
+        r = sp.run(cmd,capture_output=True,text=True)
+        print(r.stderr,file=sys.stderr)
+        if r.returncode != 0:
+            raise Exception(f"gridlabd error code {r.returncode}")
+        return r.stdout.strip().split("\n")
+
     def gridlabd(*args,**kwargs):
         """Run gridlabd
         Arguments:
@@ -310,10 +344,17 @@ def __(sp, sys):
         if r.returncode != 0:
             raise Exception(f"gridlabd error code {r.returncode}")
         return r.stdout.strip().split("\n")
-    gridlabd_version = gridlabd("--version")
-    gridlabd_copyright = gridlabd("--copyright")
+
+    gridlabd_version = gridlabd_bin("--version")
+    gridlabd_copyright = gridlabd_bin("--copyright")
     gridlabd_license = gridlabd("--license")
-    return gridlabd, gridlabd_copyright, gridlabd_license, gridlabd_version
+    return (
+        gridlabd,
+        gridlabd_bin,
+        gridlabd_copyright,
+        gridlabd_license,
+        gridlabd_version,
+    )
 
 
 @app.cell
