@@ -14,6 +14,7 @@ def __(
     gridlabd_license,
     gridlabd_version,
     interval,
+    last_stderr,
     loads,
     mo,
     model_stats,
@@ -30,15 +31,25 @@ def __(
     timezone,
     weather_stats,
 ):
-    project_name = mo.ui.text(label="Project name",value="untitled-0")
+    project_name = mo.ui.text(label="Project name",value="untitled-0",disabled=True)
+    save = mo.ui.button(label="Save",disabled=True)
+    load = mo.ui.button(label="Load",disabled=True)
     mo.vstack([
-        mo.hstack([project_name,mo.md(gridlabd_version[0])]),
+        mo.hstack([
+            mo.md("""# <a href="https://www.arras.energy/" target="_blank">Arras Energy</a>"""),
+            mo.md(f"""<br/><a href="http://source.gridlabd.us/" target="_blank">{gridlabd_version[0]}</a>""")    
+        ]),
+        mo.hstack([
+            project_name,
+            load,
+            save
+        ],justify='start'),
         mo.md("---"),
         mo.tabs({
             "Network" : mo.vstack([
-                reference_model,
-                network,
-                mo.ui.table(model_stats,selection=None) if not model_stats is None else mo.md("No model info")
+                mo.hstack([network,reference_model]),
+                mo.ui.table(model_stats,selection=None) if not model_stats is None else mo.md("No model info"),
+                mo.md(f"Error output:<font color=red>\n```\n{last_stderr}\n```\n</font>" if last_stderr else ''),
                 ]),
             "Weather" : mo.vstack([
                 mo.hstack([state,city],justify="start"),
@@ -48,6 +59,8 @@ def __(
                 mo.hstack([starttime,stoptime,timezone],justify="start"),
                 clock,
                 ]),
+            "Loads" : mo.md("No load models available"),
+            "Meters" : mo.md("No meter data available"),
             "Output" : mo.vstack([
                 mo.vstack([mo.hstack([classes,fields,interval],justify='start'),loads]),
                 recorders,
@@ -72,7 +85,7 @@ def __(
         mo.md("---"),
         mo.md("<BR/>".join([x for x in gridlabd_copyright if x.startswith("Copyright")])),
         ])
-    return project_name,
+    return load, project_name, save
 
 
 @app.cell
@@ -121,7 +134,7 @@ def __(alt, dt, mo, outputs, pd, results_preview):
 @app.cell
 def __(gridlabd, mo):
     #
-    # Network models
+    # Reference models
     #
     _models = gridlabd("model","index")
     reference_model = mo.ui.dropdown(options=_models,label="Reference model")
@@ -136,19 +149,19 @@ def __(glob, mo, os, reference_model):
     if reference_model.value:
         _glm = f"{os.path.basename(reference_model.value)}.glm"
     else:
-        _glm = ""
+        _glm = None
     _files = [x for x in glob.glob("*.glm") if not x.startswith("_")]
-    network = mo.ui.dropdown(label="Model file(s)",options=_files,value=_glm)
+    network = mo.ui.dropdown(label="Network model",options=_files,value=_glm)
     return network,
 
 
 @app.cell
-def __(gridlabd, network):
+def __(gridlabd, reference_model):
     #
     # Download model
     #
-    if network.value:
-        gridlabd("model","get",network.value)
+    if reference_model.value:
+        gridlabd("model","get",reference_model.value)
     return
 
 
@@ -211,32 +224,59 @@ def __(mo, starttime, stoptime, timezone):
 
 
 @app.cell
-def __(gridlabd_bin, json, network, pd, re):
-    #
+def __(
+    gridlabd,
+    json,
+    network,
+    pd,
+    re,
+    setting_repeatmsgs,
+    setting_usemodules,
+    sys,
+):
+    network.value#
     # Compile the model
     #
-    model = None
+    active_modules = ""
+    if setting_usemodules:
+        active_modules = " ".join([f"-M {x}" for x in setting_usemodules.value])
+    model = {}
     model_stats = None
     if network.value: # and state.value and city.value and timezone.value:
-        glmfile = network.value
         jsonfile = network.value.replace(".glm",".json")
-        gridlabd_bin("-C",glmfile,"-o",jsonfile)
-        with open(jsonfile,"r") as fh:
-            model = json.load(fh)
-            assert(model["application"]=="gridlabd")
-            assert(model["version"]>="4.3.3")
-            _stats = {}
-            for obj,data in model["objects"].items():
-                if data["class"] in _stats:
-                    _stats[data["class"]] += 1
-                else:
-                    _stats[data["class"]] = 1
-            model_stats = pd.concat([pd.DataFrame([(re.sub("[^A-Za-z0-9]"," ",x).title(),y)]) for x,y in sorted(_stats.items())]).set_index(0)
-            model_stats.index.name = "Class Name"
-            model_stats.columns = ["Object Count"]
-            # model_stats[0] = [x.re("[^A-Za-z0-9"," ").title() for x in models_stats[0]]
+        try:
+            _modules = active_modules.strip().split()
+            gridlabd(*_modules,"-C",network.value,"-o",jsonfile,binary=True,
+                     suppress_repeat_messages=str(setting_repeatmsgs.value).upper(),
+                    )
+            with open(jsonfile,"r") as fh:
+                model = json.load(fh)
+                assert(model["application"]=="gridlabd")
+                assert(model["version"]>="4.3.3")
+                _stats = {}
+                for obj,data in model["objects"].items():
+                    if data["class"] in _stats:
+                        _stats[data["class"]] += 1
+                    else:
+                        _stats[data["class"]] = 1
+                model_stats = pd.concat([pd.DataFrame([(re.sub("[^A-Za-z0-9]"," ",x).title(),y)]) for x,y in sorted(_stats.items())]).set_index(0)
+                model_stats.index.name = "Class Name"
+                model_stats.columns = ["Object Count"]
+        except:
+            e_type, e_value, _ = sys.exc_info()
+            model_stats = pd.DataFrame({"error":[f"{e_value} ({e_type.__name__})"]})
 
-    return data, fh, glmfile, jsonfile, model, model_stats, obj
+    return (
+        active_modules,
+        data,
+        e_type,
+        e_value,
+        fh,
+        jsonfile,
+        model,
+        model_stats,
+        obj,
+    )
 
 
 @app.cell
@@ -244,7 +284,7 @@ def __(classes, mo, model, pd, setting_showheaders):
     #
     # Identify available objects and fields to records
     #
-    if model:
+    if "objects" in model and "header" in model:
         _loads = pd.DataFrame(dict([(obj,data) for obj,data in model["objects"].items() if data["class"] in classes.value])).transpose().sort_index()
         if not setting_showheaders:
             _loads.drop(axis=1,labels=list(model["header"]),errors='ignore',inplace=True)
@@ -261,7 +301,7 @@ def __(mo, model):
     #
     # Identify available classes to record
     #
-    _classes = sorted(model["classes"]) if model else []
+    _classes = sorted(model["classes"]) if "classes" in model else []
     classes = mo.ui.multiselect(options=_classes,label="Classes to record")
     return classes,
 
@@ -289,7 +329,19 @@ def __(fields, interval, loads, mo):
 
 
 @app.cell
-def __(city, clock, glmfile, loads, mo, model, os, recorders, state):
+def __(
+    active_modules,
+    city,
+    clock,
+    loads,
+    mo,
+    model,
+    network,
+    os,
+    recorders,
+    setting_repeatmsgs,
+    state,
+):
     #
     # Run the simulation
     #
@@ -316,80 +368,184 @@ def __(city, clock, glmfile, loads, mo, model, os, recorders, state):
                 os.system(start_command)
         mo.ui.button(label="Start",on_click=_start)
 
-    if model:# and clock.value and recorders.value:
-        start_command = f"gridlabd {glmfile} _weather.glm _clock.glm _recorders.glm -D keep_progress=TRUE"
+
+    if "objects" in model: # and clock.value and recorders.value:
+        start_command = f"gridlabd {active_modules} {network.value} _weather.glm _clock.glm _recorders.glm -D keep_progress=TRUE -D suppress_repeat_messages={str(setting_repeatmsgs.value).upper()}"
         outputs = [f"{x}.csv" for x in loads.value.index]
     else:
         start_command = ""
         outputs = []
 
-    start = mo.ui.button(label="Start",on_click=_start,disabled=False if model else True)
+    start = mo.ui.button(label="Start",on_click=_start,disabled=False if start_command else True)
     return outputs, start, start_command
 
 
+@app.cell(disabled=True)
+def __(get_file, mo, px):
+    #
+    # Map view
+    #
+    def load_map():
+        if get_file() is None or "data" not in get_file() or len(get_file()["data"]) == 0:
+            return None
+        nodes = get_file()["nodes"]
+        if nodes is None or len(nodes) == 0:
+            return None
+        lines = get_file()["lines"]
+        data = get_file()["data"]
+
+        # nodes
+        # map = px.scatter_mapbox(
+        #     lat = nodes['latitude'],
+        #     lon = nodes['longitude'],
+        #     hover_name = nodes['name'],
+        #     text = nodes['name'] if get_labels() else None,
+        #     zoom = 15,
+        #     # TODO: add hover_data flags, e.g., dict(field:bool,...)
+        # )
+        map = px.scatter_mapbox(nodes,
+                                lat = 'latitude',
+                                lon = 'longitude',
+                                hover_name = 'name',
+                                text = 'name' if get_labels() else None,
+                                zoom = 15,
+                                hover_data = dict(
+                                    latitude=False,
+                                    longitude=False,
+                                    nominal_voltage=True,
+                                    phases=True,
+                                ),
+                               )
+
+        # lines
+        latlon = nodes.reset_index()[['name','latitude','longitude']].set_index('name')
+        latlon = dict([(n,(xy['latitude'],xy['longitude'])) for n,xy in latlon.iterrows()])
+        valid = [(n,x,y) for n,x,y in zip(lines['name'],lines['from'],lines['to']) if x in latlon and y in latlon]
+        names = [None] * 3 * len(valid)
+        names[0::3] = [x[0] for x in valid]
+        names[1::3] = [x[0] for x in valid]
+        lats = [None] * 3 * len(valid)
+        lats[0::3] = [latlon[x[1]][0] for x in valid]
+        lats[1::3] = [latlon[x[2]][0] for x in valid]
+        lons = [None] * 3 * len(valid)
+        lons[0::3] = [latlon[x[1]][1] for x in valid]
+        lons[1::3] = [latlon[x[2]][1] for x in valid]
+        map.add_trace(dict(hoverinfo = 'skip',
+                           lat = lats,
+                           lon = lons,
+                           line = dict(color='#636efa'),
+                           mode = 'lines',
+                           subplot = 'mapbox',
+                           type = 'scattermapbox',
+                           showlegend = False))
+
+        if get_satellite():
+            map.update_layout(
+                mapbox_style="white-bg",
+                mapbox_layers=[
+                    {
+                        "below": 'traces',
+                        "sourcetype": "raster",
+                        "sourceattribution": "United States Geological Survey",
+                        "source": [                 "https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer/tile/{z}/{y}/{x}"
+                        ],
+                    },
+                  ])
+        else:    
+            map.update_layout(mapbox_style="open-street-map")
+        map.update_layout(margin={"r":0,"t":0,"l":0,"b":0})
+        set_mapview(map)
+
+    get_labels, set_labels = mo.state(False)
+    get_satellite, set_satellite = mo.state(False)
+    get_mapview, set_mapview = mo.state(None)
+
+    def change_labels(x):
+        set_labels(x)
+        load_map()
+
+    def change_satellite(x):
+        set_satellite(x)
+        load_map()
+
+    load_map()
+    return (
+        change_labels,
+        change_satellite,
+        get_labels,
+        get_mapview,
+        get_satellite,
+        load_map,
+        set_labels,
+        set_mapview,
+        set_satellite,
+    )
+
+
 @app.cell
-def __(mo):
+def __(gridlabd_modules, mo):
     setting_graphtype = mo.ui.dropdown(["Altair","Plotly","Matplotlib"],"Altair")
     setting_showheaders = mo.ui.checkbox(False)
+    setting_usemodules = mo.ui.multiselect(options=gridlabd_modules)
+    setting_repeatmsgs = mo.ui.checkbox(True)
     _settings = {
         "Graph Type" : setting_graphtype,
+        "Include Modules" : setting_usemodules,
         "Show Header Data" : setting_showheaders,
+        "Suppress Repeat Messages" : setting_repeatmsgs,
     }
     settings = "<table>"
     for label,element in _settings.items():
         settings += f"<tr><td><b>{label}</b></td><td>{element}</td></tr>"
     settings += "</table>"
-        
-    return element, label, setting_graphtype, setting_showheaders, settings
+
+    return (
+        element,
+        label,
+        setting_graphtype,
+        setting_repeatmsgs,
+        setting_showheaders,
+        setting_usemodules,
+        settings,
+    )
 
 
 @app.cell
-def __(os, sp, sys):
-    def gridlabd_bin(*args,**kwargs):
+def __(os, sp):
+    last_stderr = None
+
+    def gridlabd(*args,binary=False,**kwargs):
         """Run gridlabd
         Arguments:
         - *args: command arguments
         - **kwargs: global definitions (placed before command arguments)
         """
-        cmd = ["gridlabd.bin" if "GLD_BIN" in os.environ else "gridlabd"]
+        cmd = ["gridlabd.bin" if binary and "GLD_BIN" in os.environ else "gridlabd"]
         for name,value in kwargs.items():
             cmd.extend(["-D", f"{name}={value}"])
+        # cmd.extend(["-D",f"suppress_repeat_messages={str(setting_repeatmsgs.value).upper()}"])
         cmd.extend(args)
-        print(f"[Running '{' '.join(cmd)}']",file=sys.stdout)
+        # print(f"[Running '{' '.join(cmd)}']",file=sys.stdout)
         # with mo.status.spinner(f"Running command '{cmd}'"):
+        global last_stderr
+        last_stderr = None
         r = sp.run(cmd,capture_output=True,text=True)
-        print(r.stderr,file=sys.stderr)
+        last_stderr = r.stderr
         if r.returncode != 0:
             raise Exception(f"gridlabd error code {r.returncode}")
         return r.stdout.strip().split("\n")
 
-    def gridlabd(*args,**kwargs):
-        """Run gridlabd
-        Arguments:
-        - *args: command arguments
-        - **kwargs: global definitions (placed before command arguments)
-        """
-        cmd = ["gridlabd"]
-        for name,value in kwargs.items():
-            cmd.extend(["-D", f"{name}={value}"])
-        cmd.extend(args)
-        print(f"[Running '{' '.join(cmd)}']",file=sys.stdout)
-        # with mo.status.spinner(f"Running command '{cmd}'"):
-        r = sp.run(cmd,capture_output=True,text=True)
-        print(r.stderr,file=sys.stderr)
-        if r.returncode != 0:
-            raise Exception(f"gridlabd error code {r.returncode}")
-        return r.stdout.strip().split("\n")
-
-    gridlabd_version = gridlabd_bin("--version=all")
-    gridlabd_copyright = gridlabd_bin("--copyright")
+    gridlabd_version = gridlabd("--version=all",binary=True)
+    gridlabd_copyright = gridlabd("--copyright",binary=True)
     gridlabd_license = gridlabd("--license")
+    gridlabd_modules = [x.split()[0] for x in gridlabd("--modlist",binary=True)[2:]]
     return (
         gridlabd,
-        gridlabd_bin,
         gridlabd_copyright,
         gridlabd_license,
+        gridlabd_modules,
         gridlabd_version,
+        last_stderr,
     )
 
 
