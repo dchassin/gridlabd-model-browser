@@ -55,8 +55,8 @@ def __(recorders):
 
 
 @app.cell
-def __(mo, start, start_command):
-    if start_command:
+def __(clock, mo, recorders, start, start_command):
+    if start_command and (not hasattr(clock,"value") or clock.value) and (not hasattr(recorders,"value") or recorders.value):
         _start = mo.vstack([
             mo.md("Ready to start simulation using command"),
             mo.md(f"`{start_command}`"),
