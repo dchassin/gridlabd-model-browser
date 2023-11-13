@@ -1,3 +1,4 @@
 marimo
+altair
 pandas
 plotly
