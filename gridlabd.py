@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.1.47"
+__generated_with = "0.1.48"
 app = marimo.App(width="full")
 
 
@@ -19,8 +19,10 @@ def __(
     model_stats,
     network,
     recorders,
+    reference_model,
     results,
     results_preview,
+    settings,
     start_preview,
     starttime,
     state,
@@ -28,11 +30,13 @@ def __(
     timezone,
     weather_stats,
 ):
+    project_name = mo.ui.text(label="Project name",value="untitled-0")
     mo.vstack([
-        mo.md(gridlabd_version[0]),
+        mo.hstack([project_name,mo.md(gridlabd_version[0])]),
         mo.md("---"),
         mo.tabs({
             "Network" : mo.vstack([
+                reference_model,
                 network,
                 mo.ui.table(model_stats,selection=None) if not model_stats is None else mo.md("No model info")
                 ]),
@@ -56,6 +60,7 @@ def __(
             "Map" : mo.vstack([
                 mo.md("No geodata found")
                 ]),
+            "Settings" : settings,
             "About" : mo.vstack([
                 mo.Html("<BR/>".join(gridlabd_license)),
                 ]),
@@ -67,7 +72,7 @@ def __(
         mo.md("---"),
         mo.md("<BR/>".join([x for x in gridlabd_copyright if x.startswith("Copyright")])),
         ])
-    return
+    return project_name,
 
 
 @app.cell
@@ -116,10 +121,24 @@ def __(alt, dt, mo, outputs, pd, results_preview):
 @app.cell
 def __(gridlabd, mo):
     #
-    #  networks
+    # Network models
     #
-    _networks = gridlabd("model","index")
-    network = mo.ui.dropdown(options=_networks,label="Model")
+    _models = gridlabd("model","index")
+    reference_model = mo.ui.dropdown(options=_models,label="Reference model")
+    return reference_model,
+
+
+@app.cell
+def __(glob, mo, os, reference_model):
+    #
+    # Model file
+    #
+    if reference_model.value:
+        _glm = f"{os.path.basename(reference_model.value)}.glm"
+    else:
+        _glm = ""
+    _files = [x for x in glob.glob("*.glm") if not x.startswith("_")]
+    network = mo.ui.dropdown(label="Model file(s)",options=_files,value=_glm)
     return network,
 
 
@@ -192,15 +211,15 @@ def __(mo, starttime, stoptime, timezone):
 
 
 @app.cell
-def __(gridlabd_bin, json, network, os, pd, re):
+def __(gridlabd_bin, json, network, pd, re):
     #
     # Compile the model
     #
     model = None
     model_stats = None
     if network.value: # and state.value and city.value and timezone.value:
-        glmfile = f"{os.path.basename(network.value)}.glm"
-        jsonfile = f"{os.path.basename(network.value)}.json"
+        glmfile = network.value
+        jsonfile = network.value.replace(".glm",".json")
         gridlabd_bin("-C",glmfile,"-o",jsonfile)
         with open(jsonfile,"r") as fh:
             model = json.load(fh)
@@ -221,13 +240,14 @@ def __(gridlabd_bin, json, network, os, pd, re):
 
 
 @app.cell
-def __(classes, mo, model, pd):
+def __(classes, mo, model, pd, setting_showheaders):
     #
     # Identify available objects and fields to records
     #
     if model:
         _loads = pd.DataFrame(dict([(obj,data) for obj,data in model["objects"].items() if data["class"] in classes.value])).transpose().sort_index()
-        _loads.drop(axis=1,labels=list(model["header"]),errors='ignore',inplace=True)
+        if not setting_showheaders:
+            _loads.drop(axis=1,labels=list(model["header"]),errors='ignore',inplace=True)
         loads = mo.ui.table(data=_loads,label="Objects to record",page_size=5,pagination=True)
         fields = mo.ui.multiselect(sorted(_loads.columns),label="Fields to record")
         interval = mo.ui.dropdown("1s 10s 1min 5min 15min 1h".split(),label="Sampling interval",value="1h")
@@ -308,6 +328,22 @@ def __(city, clock, glmfile, loads, mo, model, os, recorders, state):
 
 
 @app.cell
+def __(mo):
+    setting_graphtype = mo.ui.dropdown(["Altair","Plotly","Matplotlib"],"Altair")
+    setting_showheaders = mo.ui.checkbox(False)
+    _settings = {
+        "Graph Type" : setting_graphtype,
+        "Show Header Data" : setting_showheaders,
+    }
+    settings = "<table>"
+    for label,element in _settings.items():
+        settings += f"<tr><td><b>{label}</b></td><td>{element}</td></tr>"
+    settings += "</table>"
+        
+    return element, label, setting_graphtype, setting_showheaders, settings
+
+
+@app.cell
 def __(os, sp, sys):
     def gridlabd_bin(*args,**kwargs):
         """Run gridlabd
@@ -345,7 +381,7 @@ def __(os, sp, sys):
             raise Exception(f"gridlabd error code {r.returncode}")
         return r.stdout.strip().split("\n")
 
-    gridlabd_version = gridlabd_bin("--version")
+    gridlabd_version = gridlabd_bin("--version=all")
     gridlabd_copyright = gridlabd_bin("--copyright")
     gridlabd_license = gridlabd("--license")
     return (
@@ -359,13 +395,13 @@ def __(os, sp, sys):
 
 @app.cell
 def __():
-    import os, sys, re, io, json
+    import os, sys, re, io, json, glob
     import datetime as dt
     import marimo as mo
     import subprocess as sp
     import pandas as pd
     import altair as alt
-    return alt, dt, io, json, mo, os, pd, re, sp, sys
+    return alt, dt, glob, io, json, mo, os, pd, re, sp, sys
 
 
 if __name__ == "__main__":
