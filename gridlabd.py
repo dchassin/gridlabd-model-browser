@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.1.48"
+__generated_with = "0.1.39"
 app = marimo.App(width="full")
 
 
@@ -318,12 +318,12 @@ def __(fields, interval, loads, mo):
     if hasattr(loads,"value") and fields.value:
         for name in loads.value.index:
             _recorders += f"""object recorder {{
-            parent "{name}";
-            property "{','.join(fields.value)}";
-            interval "{interval.value}";
-            file "{name}.csv";
-        }}
-        """
+        parent "{name}";
+        property "{','.join(fields.value)}";
+        interval "{interval.value}";
+        file "{name}.csv";
+    }}
+    """
     recorders = mo.ui.text_area(value=_recorders,full_width=True,label="Recorders")
     return name, recorders
 
