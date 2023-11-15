@@ -1,0 +1,16 @@
+#!/bin/bash
+
+FIRST=2718
+LAST=2800
+
+PORT=$FIRST
+echo "PID   PORT  FILENAME"
+echo "----- ----- --------------------"
+while [ $PORT -lt $LAST ]; do
+	FILENAME=$(curl -s http://localhost:$PORT | grep '<marimo-filename[^>]*>' | sed 's/<[^>]*>//g' || echo "NAN")
+	if [ ! -z "$FILENAME" -a "$FILENAME" != "NAN" ]; then
+		PID=$(ps ax | grep 'marimo run $FILENAME' | cut -f1 -d' ')
+		printf "%5s %5s %s\n" $PID $PORT $FILENAME
+	fi
+	PORT=$(($PORT+1))
+done

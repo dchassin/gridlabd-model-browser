@@ -1,0 +1,23 @@
+#!/bin/bash
+
+FIRST=2718
+LAST=2800
+
+# automatically open any notebook without a an open browser tab
+if [ $# -eq 0 ]; then
+	PORT=$FIRST
+	while [ $PORT -lt $LAST ]; do
+		FILENAME=$(curl -s http://localhost:$PORT | grep '<marimo-filename[^>]*>' | sed 's/<[^>]*>//g' || echo "NAN")
+		if [ "$FILENAME" == "NAN" ]; then
+			echo "Server on port $PORT does not appear to a marimo notebook"
+		elif [ ! -z "$FILENAME" ]; then
+			echo "Opening $FILENAME on port $PORT"
+			open http://localhost:$PORT/ &
+		fi
+		PORT=$(($PORT+1))
+	done
+else
+	for FILE in $*; do
+		marimo run $FILE &
+	done 
+fi

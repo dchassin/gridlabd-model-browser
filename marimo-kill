@@ -1,0 +1,11 @@
+#!/bin/bash
+
+FIRST=2718
+LAST=2800
+
+for PID in $(ps $1 | grep 'marimo run' | cut -f1 -d' '); do
+	if [ "$(ps $PID 1>/dev/null 2>&1 && echo ok || echo fail)" == "ok" ]; then
+		echo -n "[$$] Killing $PID..."
+		kill $PID && echo "ok" || echo "failed"
+	fi
+done
