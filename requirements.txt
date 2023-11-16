@@ -2,3 +2,4 @@ marimo
 altair
 pandas
 plotly
+requests

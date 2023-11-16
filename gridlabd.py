@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.1.39"
+__generated_with = "0.1.48"
 app = marimo.App(width="full")
 
 
@@ -333,6 +333,7 @@ def __(
     active_modules,
     city,
     clock,
+    gridlabd,
     loads,
     mo,
     model,
@@ -370,14 +371,21 @@ def __(
 
 
     if "objects" in model: # and clock.value and recorders.value:
-        start_command = f"gridlabd {active_modules} {network.value} _weather.glm _clock.glm _recorders.glm -D keep_progress=TRUE -D suppress_repeat_messages={str(setting_repeatmsgs.value).upper()}"
+        simulation = gridlabd(*active_modules,
+                              network.value, "_weather.glm", "_clock.glm", "_recorders.glm",
+                              dict(keep_progress = "TRUE",
+                                   suppress_repeat_messages = {str(setting_repeatmsgs.value).upper()},
+                                  ),
+                              wait=True)
+        start_command = simulation.command
         outputs = [f"{x}.csv" for x in loads.value.index]
     else:
         start_command = ""
+        simulation = None
         outputs = []
 
     start = mo.ui.button(label="Start",on_click=_start,disabled=False if start_command else True)
-    return outputs, start, start_command
+    return outputs, simulation, start, start_command
 
 
 @app.cell(disabled=True)
@@ -511,29 +519,18 @@ def __(gridlabd_modules, mo):
 
 
 @app.cell
-def __(os, sp):
+def __(Gridlabd):
     last_stderr = None
 
-    def gridlabd(*args,binary=False,**kwargs):
+    def gridlabd(*args,binary=False,wait=True,**kwargs):
         """Run gridlabd
         Arguments:
         - *args: command arguments
         - **kwargs: global definitions (placed before command arguments)
         """
-        cmd = ["gridlabd.bin" if binary and "GLD_BIN" in os.environ else "gridlabd"]
-        for name,value in kwargs.items():
-            cmd.extend(["-D", f"{name}={value}"])
-        # cmd.extend(["-D",f"suppress_repeat_messages={str(setting_repeatmsgs.value).upper()}"])
-        cmd.extend(args)
-        # print(f"[Running '{' '.join(cmd)}']",file=sys.stdout)
-        # with mo.status.spinner(f"Running command '{cmd}'"):
-        global last_stderr
-        last_stderr = None
-        r = sp.run(cmd,capture_output=True,text=True)
-        last_stderr = r.stderr
-        if r.returncode != 0:
-            raise Exception(f"gridlabd error code {r.returncode}")
-        return r.stdout.strip().split("\n")
+        gld = Gridlabd(*args,binary=binary,start=True,wait=wait,**kwargs)
+        last_stderr = gld.get_errors()
+        return gld.get_output().split("\n")
 
     gridlabd_version = gridlabd("--version=all",binary=True)
     gridlabd_copyright = gridlabd("--copyright",binary=True)
@@ -557,7 +554,8 @@ def __():
     import subprocess as sp
     import pandas as pd
     import altair as alt
-    return alt, dt, glob, io, json, mo, os, pd, re, sp, sys
+    from gridlabd_runner import Gridlabd
+    return Gridlabd, alt, dt, glob, io, json, mo, os, pd, re, sp, sys
 
 
 if __name__ == "__main__":
