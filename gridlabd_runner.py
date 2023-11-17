@@ -136,8 +136,12 @@ class Gridlabd:
         """
         if "runner" in self.threads:
             self.threads["runner"].join(timeout)
-            debug(f"Gridlabd.wait() simulation exitcode = {self.process.returncode}")
-            self.status = self.ERROR if self.process.returncode else self.DONE
+            if self.process:
+                debug(f"Gridlabd.wait() simulation exitcode = {self.process.returncode}")
+                self.status = self.ERROR if self.process.returncode else self.DONE
+            else:
+                debug(f"Gridlabd.wait() simulation is running")
+                self.status = self.RUNNING
         if "monitor" in self.threads:
             self.threads["monitor"].join(timeout)
 
@@ -145,13 +149,19 @@ class Gridlabd:
         """Get process status"""
         return ["READY","STARTING","RUNNING","ERROR","DONE"][self.status]
 
-    def get_output(self):
+    def get_output(self,split=None):
         """Get process output so far"""
-        return self.output.read().decode()
+        result = self.output.read().decode()
+        if split:
+            return result.split(split)
+        return result
 
-    def get_errors(self):
+    def get_errors(self,split=None):
         """Get process errors so far"""
-        return self.errors.read().decode()
+        result = self.errors.read().decode()
+        if split:
+            return result.split(split)
+        return result
 
     def get_exitcode(self):
         """Get process exit code"""
@@ -159,7 +169,8 @@ class Gridlabd:
 
     def get_command(self):
         """Get command string"""
-        return ' '.join(self.command)
+        return str(self.command)
+
     def query(self,query):
         """Query simulation
         Arguments:

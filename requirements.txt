@@ -3,3 +3,6 @@ altair
 pandas
 plotly
 requests
+pyopenssl
+flask
+matplotlib

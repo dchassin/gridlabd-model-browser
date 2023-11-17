@@ -1,7 +1,17 @@
 import marimo
 
-__generated_with = "0.1.48"
+__generated_with = "0.1.47"
 app = marimo.App(width="full")
+
+
+@app.cell
+def __(Gridlabd, mo):
+    #
+    # TODO: Gridlabd.start _reader doesn't work
+    #
+    result = Gridlabd("--version=all", binary=True, wait=True).get_output()
+    mo.md(result)
+    return result,
 
 
 @app.cell
@@ -31,6 +41,9 @@ def __(
     timezone,
     weather_stats,
 ):
+    # 
+    # Main page
+    #
     project_name = mo.ui.text(label="Project name",value="untitled-0",disabled=True)
     save = mo.ui.button(label="Save",disabled=True)
     load = mo.ui.button(label="Load",disabled=True)
@@ -90,6 +103,9 @@ def __(
 
 @app.cell
 def __(clock, mo, recorders, start, start_command):
+    #
+    # GridLAB-D status
+    #
     if start_command and (not hasattr(clock,"value") or clock.value) and (not hasattr(recorders,"value") or recorders.value):
         start_preview = mo.vstack([
             mo.md("Ready to start simulation using command"),
@@ -103,6 +119,9 @@ def __(clock, mo, recorders, start, start_command):
 
 @app.cell
 def __(mo):
+    #
+    # Result view
+    #
     _views = ["Table","Graph"]
     results_preview = mo.ui.radio(_views,value="Table",label="Preview results as")
     return results_preview,
@@ -330,10 +349,10 @@ def __(fields, interval, loads, mo):
 
 @app.cell
 def __(
+    Gridlabd,
     active_modules,
     city,
     clock,
-    gridlabd,
     loads,
     mo,
     model,
@@ -371,13 +390,13 @@ def __(
 
 
     if "objects" in model: # and clock.value and recorders.value:
-        simulation = gridlabd(*active_modules,
+        simulation = Gridlabd(*active_modules,
                               network.value, "_weather.glm", "_clock.glm", "_recorders.glm",
                               dict(keep_progress = "TRUE",
                                    suppress_repeat_messages = {str(setting_repeatmsgs.value).upper()},
                                   ),
                               wait=True)
-        start_command = simulation.command
+        start_command = simulation.get_command()
         outputs = [f"{x}.csv" for x in loads.value.index]
     else:
         start_command = ""
@@ -522,20 +541,24 @@ def __(gridlabd_modules, mo):
 def __(Gridlabd):
     last_stderr = None
 
-    def gridlabd(*args,binary=False,wait=True,**kwargs):
+
+    def gridlabd(*args, binary=False, wait=True, **kwargs):
         """Run gridlabd
         Arguments:
         - *args: command arguments
         - **kwargs: global definitions (placed before command arguments)
         """
-        gld = Gridlabd(*args,binary=binary,start=True,wait=wait,**kwargs)
+        gld = Gridlabd(*args, binary=binary, start=True, wait=wait, **kwargs)
         last_stderr = gld.get_errors()
         return gld.get_output().split("\n")
 
-    gridlabd_version = gridlabd("--version=all",binary=True)
-    gridlabd_copyright = gridlabd("--copyright",binary=True)
-    gridlabd_license = gridlabd("--license")
-    gridlabd_modules = [x.split()[0] for x in gridlabd("--modlist",binary=True)[2:]]
+
+    gridlabd_version = Gridlabd("--version=all", binary=True, wait=True).get_output(split="\n")
+    gridlabd_copyright = Gridlabd("--copyright", binary=True, wait=True).get_output(split="\n")
+    gridlabd_license = Gridlabd("--license", wait=True).get_output(split="\n")
+    gridlabd_modules = [
+        x.split()[0] for x in Gridlabd("--modlist", binary=True, wait=True).get_output(split="\n")[2:]
+    ]
     return (
         gridlabd,
         gridlabd_copyright,
