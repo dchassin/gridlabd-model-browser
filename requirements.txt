@@ -6,3 +6,4 @@ requests
 pyopenssl
 flask
 matplotlib
+geopy
