@@ -5,13 +5,9 @@ app = marimo.App(width="full")
 
 
 @app.cell
-def __(gridlabd, mo):
-    #
-    # Gridlabd version
-    #
-    gridlabd_version = gridlabd("--version", binary=True, split=True)
-    mo.vstack([mo.hstack([mo.md("# GridLAB-D NSRDB Weather"),mo.md(gridlabd_version[0])]),mo.md("---")])
-    return gridlabd_version,
+def __(mo):
+    mo.md("# GridLAB-D NSRDB Weather")
+    return
 
 
 @app.cell
@@ -89,8 +85,12 @@ def __(download_csv, download_glm, find_city, location, mo):
     # Location lookup
     #
     lookup = mo.ui.button(label = "Find",on_click=find_city)
-    mo.hstack([mo.hstack([location,lookup],justify='start'),
-               mo.hstack([download_csv,download_glm],justify='start'),
+    mo.hstack([mo.hstack([location,
+                          lookup,
+                         ],justify='start'),
+               mo.hstack([download_csv,
+                          download_glm,
+                         ],justify='start'),
               ])
     return lookup,
 
@@ -115,15 +115,16 @@ def __(
     except:
         _addr = None
     mo.vstack([
-        mo.hstack([mo.md(f"{_addr.get('city','')}, {_addr.get('state','')} ({_addr.get('country','')})" if _addr else ""),
-                   preview,
+        mo.hstack([mo.md(f"**{_addr.get('city','')}, {_addr.get('state','')} ({_addr.get('country','')})**" if _addr else ""),
+                   latitude,
+                   longitude,
                   ],
                  justify='start',
                  ),
-        mo.hstack([latitude,
-                   longitude,
-                   year,
-                   interpolation],
+        mo.hstack([year,
+                   interpolation,
+                   preview,
+                  ],
                   justify='start',
                  ),
     ])
@@ -137,6 +138,7 @@ def __(
     get_df,
     get_glm,
     get_latitude,
+    get_location,
     get_longitude,
     get_whoami,
     grid,
@@ -202,6 +204,20 @@ def __(
                 if xaxis.value and yaxis.value else mo.md("Choose fields")
         ])
 
+    def get_stats():
+        if get_df() is None:
+            return None
+        T = get_df()["temperature[degF]"]
+        table = f"<table><caption>Weather statistics for<br/>{get_location().city}, {get_location().state} ({get_location().country})<hr/></caption>"
+        table += f"<tr><th>Statistic</th><th>Value</th><th>Unit</th></tr>"
+        table += f"<tr><th>Minimum temperature</th><td>{T.min():.1f}</td><td>degF</td></tr>"
+        table += f"<tr><th>Median temperature</th><td>{T.median():.1f}</td><td>degF</td></tr>"
+        table += f"<tr><th>Mean temperature</th><td>{T.mean():.1f}</td><td>degF</td></tr>"
+        table += f"<tr><th>Standard Deviation</th><td>{T.std():.1f}</td><td>degF</td></tr>"
+        table += f"<tr><th>Maximum temperature</th><td>{T.max():.1f}</td><td>degF</td></tr>"
+        table += f"</table>"
+        return mo.md(table)
+
     def get_text():
         glm = get_glm()
         if glm is None:
@@ -210,6 +226,7 @@ def __(
                                full_width = True,
                               )
 
+    stats = get_stats()
     table = get_table()
     graph = get_graph()
     text = get_text()
@@ -233,6 +250,7 @@ def __(
 
     body = mo.vstack([
         mo.tabs({
+            "Summary" : stats if stats else nodata,
             "Graph" : graph if graph else nodata,
             "Table" : table if table else nodata,
             "GLM" : text if text else nodata,
@@ -248,6 +266,7 @@ def __(
         download_csv,
         download_glm,
         get_graph,
+        get_stats,
         get_table,
         get_text,
         graph,
@@ -256,6 +275,7 @@ def __(
         longitude,
         nodata,
         preview,
+        stats,
         table,
         text,
         year,
@@ -338,14 +358,14 @@ def __(mo):
 
 
 @app.cell
-def __(mo):
+def __(me, mo):
     #
     # UI state variables
     #
     get_city, set_city = mo.state(None)
-    get_location, set_location = mo.state("")
-    get_latitude, set_latitude = mo.state("")
-    get_longitude, set_longitude = mo.state("")
+    get_location, set_location = mo.state(me)
+    get_latitude, set_latitude = mo.state(f"{me.latlng[0]:.2f}")
+    get_longitude, set_longitude = mo.state(f"{me.latlng[1]:.2f}")
     get_df, set_df = mo.state(None)
     get_csv, set_csv = mo.state("")
     get_glm, set_glm = mo.state("")
@@ -386,32 +406,28 @@ def __():
     import subprocess as sp
     import pandas as pd
     import geopy as gp
-    from geopy.geocoders import Nominatim
+    import geocoder as gc
     from gridlabd_runner import gridlabd
 
-    geolocator = Nominatim(user_agent="marimo")
-    return (
-        Nominatim,
-        geolocator,
-        gp,
-        gridlabd,
-        io,
-        json,
-        mo,
-        os,
-        pd,
-        sp,
-        sys,
-    )
+    geolocator = gp.geocoders.Nominatim(user_agent="marimo")
+    me = gc.ip('me')
+    return gc, geolocator, gp, gridlabd, io, json, me, mo, os, pd, sp, sys
 
 
 @app.cell
-def __(mo):
+def __(gridlabd, mo):
+    #
+    # Gridlabd version
+    #
+    gridlabd_version = gridlabd("--version", binary=True, split=True)
     mo.vstack([
         mo.md("---"),
-        mo.md("*Copyright (C) 2023, Regents of the Leland Stanford Junior University*")
+        mo.hstack([
+            mo.md(f"*{gridlabd_version[0]}*"),
+            mo.md("*Copyright (C) 2023, Regents of the Leland Stanford Junior University*"),
+        ]),
     ])
-    return
+    return gridlabd_version,
 
 
 if __name__ == "__main__":
