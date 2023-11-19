@@ -207,14 +207,17 @@ def __(
     def get_stats():
         if get_df() is None:
             return None
-        T = get_df()["temperature[degF]"]
-        table = f"<table><caption>Weather statistics for<br/>{get_location().city}, {get_location().state} ({get_location().country})<hr/></caption>"
-        table += f"<tr><th>Statistic</th><th>Value</th><th>Unit</th></tr>"
-        table += f"<tr><th>Minimum temperature</th><td>{T.min():.1f}</td><td>degF</td></tr>"
-        table += f"<tr><th>Median temperature</th><td>{T.median():.1f}</td><td>degF</td></tr>"
-        table += f"<tr><th>Mean temperature</th><td>{T.mean():.1f}</td><td>degF</td></tr>"
-        table += f"<tr><th>Standard Deviation</th><td>{T.std():.1f}</td><td>degF</td></tr>"
-        table += f"<tr><th>Maximum temperature</th><td>{T.max():.1f}</td><td>degF</td></tr>"
+        table = f"<table><caption>Weather statistics for {get_location().city}, {get_location().state} ({get_location().country})<hr/></caption><tr><th>Field</th><th>Minimum</th><th>Median</th><th>Mean</th><th>Stdev</th><th>Maximum</th></tr>"
+        for field in get_df().columns:
+            if field not in ["datetime"]:
+                X = get_df()[field]
+                table += f"<tr><th>{field}</th>"
+                table += f"<td>{X.min():.2f}</td>"
+                table += f"<td>{X.median():.2f}</td>"
+                table += f"<td>{X.mean():.2f}</td>"
+                table += f"<td>{X.std():.2f}</td>"
+                table += f"<td>{X.max():.2f}</td>"
+                table += f"</tr>"
         table += f"</table>"
         return mo.md(table)
 
