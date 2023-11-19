@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.1.47"
+__generated_with = "0.1.55"
 app = marimo.App(width="full")
 
 
@@ -77,11 +77,19 @@ def __(get_fields, mo, setting_graphxaxis, setting_graphyaxis):
     #
     # Plotting options
     #
-    xaxis = mo.ui.dropdown(options=get_fields() if get_fields() else [],label="X Axis",value=setting_graphxaxis.value if get_fields() else None)
-    yaxis = mo.ui.multiselect(options=get_fields() if get_fields() else [],label="Y Axis",value=[setting_graphyaxis.value] if get_fields() else None)
-    grid = mo.ui.switch(label="Grid")
-    marker = mo.ui.dropdown(options=["none",".","x","+","o","^","v"],value="none")
-    line = mo.ui.dropdown(options=["none","solid","dotted","dashed","dashdot"],value="solid")
+    xaxis = mo.ui.dropdown(options=get_fields() if get_fields() else [],
+                           label="X Axis:",
+                           value=setting_graphxaxis.value if get_fields() else None)
+    yaxis = mo.ui.multiselect(options=get_fields() if get_fields() else [],
+                              label="Y Axis:",
+                              value=[setting_graphyaxis.value] if get_fields() else None)
+    grid = mo.ui.switch()
+    marker = mo.ui.dropdown(label="Marker:",
+                            options=["none",".","x","+","o","^","v"],
+                            value="none")
+    line = mo.ui.dropdown(label="Line:", 
+                          options=["none","solid","dotted","dashed","dashdot"],
+                          value="solid")
     return grid, line, marker, xaxis, yaxis
 
 
@@ -139,7 +147,7 @@ def __(
         if csv is None:
             return
         return mo.vstack([
-            mo.hstack([xaxis,yaxis,grid,line,marker],justify='start'),
+            mo.hstack([xaxis,yaxis,mo.md("Grid:"),grid,line,marker],justify='start'),
             csv.plot(figsize = (15,10),
                      x = xaxis.value,
                      y = yaxis.value,
