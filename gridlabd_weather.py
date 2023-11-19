@@ -53,6 +53,7 @@ def __(mo):
     #
     # UI state variables
     #
+    get_city, set_city = mo.state(None)
     get_csv, set_csv = mo.state(None)
     get_fields, set_fields = mo.state(None)
     get_glm, set_glm = mo.state(None)
@@ -60,11 +61,13 @@ def __(mo):
     get_apikey, set_apikey = mo.state(None)
     return (
         get_apikey,
+        get_city,
         get_csv,
         get_fields,
         get_glm,
         get_whoami,
         set_apikey,
+        set_city,
         set_csv,
         set_fields,
         set_glm,
@@ -91,6 +94,28 @@ def __(get_fields, mo, setting_graphxaxis, setting_graphyaxis):
                           options=["none","solid","dotted","dashed","dashdot"],
                           value="solid")
     return grid, line, marker, xaxis, yaxis
+
+
+@app.cell
+def __(get_city, mo, set_city):
+    #
+    # Location lookup
+    #
+    location = mo.ui.text(label = "Location (city, state)")
+    lookup = mo.ui.button(label = "Find",on_click=set_city,value=get_city())
+    mo.hstack([location,lookup],justify="start")
+
+    return location, lookup
+
+
+@app.cell
+def __(download, interpolation, latitude, longitude, mo, preview, year):
+    #
+    # Weather location
+    #
+    mo.hstack([latitude,longitude,year,interpolation,preview,download])
+
+    return
 
 
 @app.cell
@@ -130,6 +155,7 @@ def __(
                  "--csv=weather.csv",
                  "--glm=weather.glm",
                  "--name=weather",
+                 f"--interpolate={interpolation.value}",
                  f"-y={year.value}",
                  f"-p={latitude.value},{longitude.value}",
                 )
@@ -170,11 +196,10 @@ def __(
     graph = get_graph()
     text = get_text()
 
-    location = mo.ui.text(label = "Location (city, state)")
-    lookup = mo.ui.button(label = "Find")
     year = mo.ui.number(start=2000, stop=2020, label="Year:", value=2020)
     latitude = mo.ui.text(label="Latitude:", value="37.5")
     longitude = mo.ui.text(label="Longitude:", value="-122.3")
+    interpolation = mo.ui.dropdown(label="Interpolation (min):", options=["60","30","20","15","10","5","1"],value="60")
     preview = mo.ui.button(label="Preview", on_click=preview)
     download = mo.download(label="Download", 
                            data = get_glm() if get_glm() else "", 
@@ -193,8 +218,6 @@ def __(
         })
 
     body = mo.vstack([
-        mo.hstack([location,lookup],justify="start"),
-        mo.hstack([latitude,longitude,year,preview,download]),
         mo.tabs({
             "Graph" : graph if graph else nodata,
             "Table" : table if table else nodata,
@@ -213,10 +236,9 @@ def __(
         get_table,
         get_text,
         graph,
+        interpolation,
         latitude,
-        location,
         longitude,
-        lookup,
         nodata,
         preview,
         setting_weathername,
@@ -271,17 +293,31 @@ def __(mo):
 
 @app.cell
 def __():
+    #
+    # Initialization
+    #
     import marimo as mo
     import os, sys, io, json
     import subprocess as sp
     import pandas as pd
+    import geopy as gp
+    from geopy.geocoders import Nominatim
     from gridlabd_runner import gridlabd
-    return gridlabd, io, json, mo, os, pd, sp, sys
 
-
-@app.cell
-def __():
-    return
+    geolocator = Nominatim(user_agent="marimo")
+    return (
+        Nominatim,
+        geolocator,
+        gp,
+        gridlabd,
+        io,
+        json,
+        mo,
+        os,
+        pd,
+        sp,
+        sys,
+    )
 
 
 if __name__ == "__main__":
