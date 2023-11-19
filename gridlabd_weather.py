@@ -97,25 +97,25 @@ def __(get_fields, mo, setting_graphxaxis, setting_graphyaxis):
 
 
 @app.cell
-def __(get_city, mo, set_city):
+def __(download, get_city, mo, preview, set_city):
     #
     # Location lookup
     #
     location = mo.ui.text(label = "Location (city, state)")
     lookup = mo.ui.button(label = "Find",on_click=set_city,value=get_city())
-    mo.hstack([location,lookup],justify="start")
+    mo.hstack([mo.hstack([location,lookup],justify='start'),
+               mo.hstack([preview,download],justify='start')])
 
     return location, lookup
 
 
 @app.cell
-def __(download, interpolation, latitude, longitude, mo, preview, year):
+def __(interpolation, latitude, longitude, mo, year):
     #
     # Weather location
     #
     mo.vstack([
         mo.hstack([latitude,longitude,year,interpolation],justify='start'),
-        mo.hstack([preview,download],justify='start'),
     ])
 
     return
@@ -159,9 +159,9 @@ def __(
         set_csv(df)
         set_fields(list(df.columns))
         gridlabd("nsrdb_weather",
-                 f"--csv={setting_weathercsv}",
-                 f"--glm={setting_weatherglm}",
-                 f"--name={setting_weatherobj}",
+                 f"--csv={setting_weathercsv.value}",
+                 f"--glm={setting_weatherglm.value}",
+                 f"--name={setting_weatherobj.value}",
                  f"--interpolate={interpolation.value}",
                  f"-y={year.value}",
                  f"-p={latitude.value},{longitude.value}",
