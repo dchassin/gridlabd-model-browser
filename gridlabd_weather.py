@@ -49,33 +49,6 @@ def __(get_apikey, get_whoami, gridlabd, json, os, set_apikey, set_whoami):
 
 
 @app.cell
-def __(mo):
-    #
-    # UI state variables
-    #
-    get_city, set_city = mo.state(None)
-    get_csv, set_csv = mo.state(None)
-    get_fields, set_fields = mo.state(None)
-    get_glm, set_glm = mo.state(None)
-    get_whoami, set_whoami = mo.state(None)
-    get_apikey, set_apikey = mo.state(None)
-    return (
-        get_apikey,
-        get_city,
-        get_csv,
-        get_fields,
-        get_glm,
-        get_whoami,
-        set_apikey,
-        set_city,
-        set_csv,
-        set_fields,
-        set_glm,
-        set_whoami,
-    )
-
-
-@app.cell
 def __(get_fields, mo, setting_graphxaxis, setting_graphyaxis):
     #
     # Plotting options
@@ -97,25 +70,62 @@ def __(get_fields, mo, setting_graphxaxis, setting_graphyaxis):
 
 
 @app.cell
-def __(download, get_city, mo, preview, set_city):
+def __(geolocator, mo, set_city, set_latitude, set_longitude):
     #
-    # Location lookup
+    # City finder
     #
-    location = mo.ui.text(label = "Location (city, state)")
-    lookup = mo.ui.button(label = "Find",on_click=set_city,value=get_city())
-    mo.hstack([mo.hstack([location,lookup],justify='start'),
-               mo.hstack([preview,download],justify='start')])
-
-    return location, lookup
+    def find_city(*args,**kwargs):
+        set_city(location.value)
+        loc = geolocator.geocode(location.value)
+        set_latitude(f"{loc.latitude:.2f}")
+        set_longitude(f"{loc.longitude:.2f}")
+    location = mo.ui.text(label = "Search for location:")  
+    return find_city, location
 
 
 @app.cell
-def __(interpolation, latitude, longitude, mo, year):
+def __(download_csv, download_glm, find_city, location, mo):
+    #
+    # Location lookup
+    #
+    lookup = mo.ui.button(label = "Find",on_click=find_city)
+    mo.hstack([mo.hstack([location,lookup],justify='start'),
+               mo.hstack([download_csv,download_glm],justify='start'),
+              ])
+    return lookup,
+
+
+@app.cell
+def __(
+    geolocator,
+    get_latitude,
+    get_longitude,
+    interpolation,
+    latitude,
+    longitude,
+    mo,
+    preview,
+    year,
+):
     #
     # Weather location
     #
+    try:
+        _addr = geolocator.reverse(f"{get_latitude()},{get_longitude()}").raw["address"]
+    except:
+        _addr = None
     mo.vstack([
-        mo.hstack([latitude,longitude,year,interpolation],justify='start'),
+        mo.hstack([mo.md(f"{_addr.get('city','')}, {_addr.get('state','')} ({_addr.get('country','')})" if _addr else ""),
+                   preview,
+                  ],
+                 justify='start',
+                 ),
+        mo.hstack([latitude,
+                   longitude,
+                   year,
+                   interpolation],
+                  justify='start',
+                 ),
     ])
 
     return
@@ -124,7 +134,10 @@ def __(interpolation, latitude, longitude, mo, year):
 @app.cell
 def __(
     get_csv,
+    get_df,
     get_glm,
+    get_latitude,
+    get_longitude,
     get_whoami,
     grid,
     gridlabd,
@@ -134,19 +147,18 @@ def __(
     mo,
     pd,
     set_csv,
+    set_df,
     set_fields,
     set_glm,
     setting_weathercsv,
     setting_weatherglm,
     setting_weatherobj,
-    settings_credentials,
-    settings_glmfile,
-    settings_weatherdata,
+    settings,
     xaxis,
     yaxis,
 ):
     #
-    # Weather preview
+    # Preview
     #
     def preview(_):
         data = io.StringIO(
@@ -156,7 +168,8 @@ def __(
                     )
         )
         df = pd.read_csv(data,parse_dates=True)
-        set_csv(df)
+        set_df(df)
+        set_csv(df.to_csv(index=False,header=False))
         set_fields(list(df.columns))
         gridlabd("nsrdb_weather",
                  f"--csv={setting_weathercsv.value}",
@@ -170,18 +183,16 @@ def __(
             set_glm(glm.read())
 
     def get_table():
-        csv = get_csv()
-        if csv is None:
+        if get_df() is None:
             return
-        return mo.ui.table(get_csv(), page_size=24)
+        return mo.ui.table(get_df(), page_size=24)
 
     def get_graph():
-        csv = get_csv()
-        if csv is None:
+        if get_df() is None:
             return
         return mo.vstack([
             mo.hstack([xaxis,yaxis,mo.md("Grid:"),grid,line,marker],justify='start'),
-            csv.plot(figsize = (15,10),
+            get_df().plot(figsize = (15,10),
                      x = xaxis.value,
                      y = yaxis.value,
                      grid = grid.value,
@@ -204,22 +215,21 @@ def __(
     text = get_text()
 
     year = mo.ui.number(start=2000, stop=2020, label="Year:", value=2020)
-    latitude = mo.ui.text(label="Latitude:", value="37.5")
-    longitude = mo.ui.text(label="Longitude:", value="-122.3")
+    latitude = mo.ui.text(label="Latitude:", value=get_latitude())
+    longitude = mo.ui.text(label="Longitude:", value=get_longitude())
     interpolation = mo.ui.dropdown(label="Interpolation (min):", options=["60","30","20","15","10","5","1"],value="60")
     preview = mo.ui.button(label="Preview", on_click=preview)
-    download = mo.download(label="Download", 
-                           data = get_glm() if get_glm() else "", 
-                           filename = "weather.glm", 
-                           disabled = (get_glm() is None), 
+    download_glm = mo.download(label="GLM", 
+                           data = get_glm(), 
+                           filename = setting_weatherglm.value, 
+                           disabled = (get_glm() == ""), 
                            mimetype = "text/plain")
-    nodata = mo.md("No data") if get_whoami() else "You must register with NSRDB first (see Settings)."
-
-    settings = mo.accordion({
-        "NSRDB Credentials" : settings_credentials,
-        "Weather Data" : settings_weatherdata,
-        "GLM File" : settings_glmfile,
-        })
+    download_csv = mo.download(label="CSV", 
+                           data = get_csv(), 
+                           filename = setting_weathercsv.value, 
+                           disabled = (get_csv() == ""), 
+                           mimetype = "text/csv")
+    nodata = mo.md(("No data" if get_whoami() else "You must register with NSRDB first (see Settings).") + "\n"*10)
 
     body = mo.vstack([
         mo.tabs({
@@ -235,7 +245,8 @@ def __(
     ])
     return (
         body,
-        download,
+        download_csv,
+        download_glm,
         get_graph,
         get_table,
         get_text,
@@ -245,11 +256,23 @@ def __(
         longitude,
         nodata,
         preview,
-        settings,
         table,
         text,
         year,
     )
+
+
+@app.cell
+def __(mo, settings_credentials, settings_glmfile, settings_weatherdata):
+    #
+    # Settings
+    #
+    settings = mo.accordion({
+        "NSRDB Credentials" : settings_credentials,
+        "Weather Data" : settings_weatherdata,
+        "GLM File" : settings_glmfile,
+        })
+    return settings,
 
 
 @app.cell
@@ -315,6 +338,45 @@ def __(mo):
 
 
 @app.cell
+def __(mo):
+    #
+    # UI state variables
+    #
+    get_city, set_city = mo.state(None)
+    get_location, set_location = mo.state("")
+    get_latitude, set_latitude = mo.state("")
+    get_longitude, set_longitude = mo.state("")
+    get_df, set_df = mo.state(None)
+    get_csv, set_csv = mo.state("")
+    get_glm, set_glm = mo.state("")
+    get_fields, set_fields = mo.state(None)
+    get_whoami, set_whoami = mo.state(None)
+    get_apikey, set_apikey = mo.state(None)
+    return (
+        get_apikey,
+        get_city,
+        get_csv,
+        get_df,
+        get_fields,
+        get_glm,
+        get_latitude,
+        get_location,
+        get_longitude,
+        get_whoami,
+        set_apikey,
+        set_city,
+        set_csv,
+        set_df,
+        set_fields,
+        set_glm,
+        set_latitude,
+        set_location,
+        set_longitude,
+        set_whoami,
+    )
+
+
+@app.cell
 def __():
     #
     # Initialization
@@ -341,6 +403,15 @@ def __():
         sp,
         sys,
     )
+
+
+@app.cell
+def __(mo):
+    mo.vstack([
+        mo.md("---"),
+        mo.md("*Copyright (C) 2023, Regents of the Leland Stanford Junior University*")
+    ])
+    return
 
 
 if __name__ == "__main__":
