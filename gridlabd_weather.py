@@ -113,7 +113,10 @@ def __(download, interpolation, latitude, longitude, mo, preview, year):
     #
     # Weather location
     #
-    mo.hstack([latitude,longitude,year,interpolation,preview,download])
+    mo.vstack([
+        mo.hstack([latitude,longitude,year,interpolation],justify='start'),
+        mo.hstack([preview,download],justify='start'),
+    ])
 
     return
 
@@ -133,7 +136,11 @@ def __(
     set_csv,
     set_fields,
     set_glm,
+    setting_weathercsv,
+    setting_weatherglm,
+    setting_weatherobj,
     settings_credentials,
+    settings_glmfile,
     settings_weatherdata,
     xaxis,
     yaxis,
@@ -152,9 +159,9 @@ def __(
         set_csv(df)
         set_fields(list(df.columns))
         gridlabd("nsrdb_weather",
-                 "--csv=weather.csv",
-                 "--glm=weather.glm",
-                 "--name=weather",
+                 f"--csv={setting_weathercsv}",
+                 f"--glm={setting_weatherglm}",
+                 f"--name={setting_weatherobj}",
                  f"--interpolate={interpolation.value}",
                  f"-y={year.value}",
                  f"-p={latitude.value},{longitude.value}",
@@ -208,9 +215,6 @@ def __(
                            mimetype = "text/plain")
     nodata = mo.md("No data") if get_whoami() else "You must register with NSRDB first (see Settings)."
 
-    setting_weathername = mo.ui.text(label = "Weather object name", value = "weather")
-    settings_glmfile = mo.vstack([setting_weathername])
-
     settings = mo.accordion({
         "NSRDB Credentials" : settings_credentials,
         "Weather Data" : settings_weatherdata,
@@ -241,12 +245,31 @@ def __(
         longitude,
         nodata,
         preview,
-        setting_weathername,
         settings,
-        settings_glmfile,
         table,
         text,
         year,
+    )
+
+
+@app.cell
+def __(mo):
+    #
+    # GLM settings
+    #
+    setting_weatherobj = mo.ui.text(label = "Weather object name", value = "weather")
+    setting_weathercsv = mo.ui.text(label = "Weather CSV name", value = "weather.csv")
+    setting_weatherglm = mo.ui.text(label = "Weather GLM name", value = "weather.glm")
+    settings_glmfile = mo.vstack([
+        setting_weatherobj,
+        setting_weathercsv,
+        setting_weatherglm,
+    ])
+    return (
+        setting_weathercsv,
+        setting_weatherglm,
+        setting_weatherobj,
+        settings_glmfile,
     )
 
 
