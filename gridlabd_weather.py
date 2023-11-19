@@ -1,125 +1,279 @@
 import marimo
 
-__generated_with = "0.1.50"
+__generated_with = "0.1.47"
 app = marimo.App(width="full")
 
 
 @app.cell
 def __(gridlabd, mo):
-    gridlabd_version = gridlabd("--version=all", binary=True)
-    mo.md(gridlabd_version)
+    #
+    # Gridlabd version
+    #
+    gridlabd_version = gridlabd("--version", binary=True, split=True)
+    mo.vstack([mo.hstack([mo.md("# GridLAB-D NSRDB Weather"),mo.md(gridlabd_version[0])]),mo.md("---")])
     return gridlabd_version,
 
 
 @app.cell
-def __(io, mo, pd):
-    get_data,set_data = mo.state(None)
-    get_fields, set_fields = mo.state(mo.md(""))
+def __(get_apikey, get_whoami, gridlabd, json, os, set_apikey, set_whoami):
+    #
+    # NSRDB credentials
+    #
+    credentials = f"{os.environ['HOME']}/.nsrdb/credentials.json"
+    def load_credentials():
+        try:
+            with open(credentials,"r") as fh:
+                whoami,apikey = list(json.load(fh).items())[0]
+                set_whoami(whoami)
+                set_apikey(apikey)
+        except:
+            set_whoami(None)
+            set_apikey(None)
 
+    def send_registration(_):
+        if get_whoami() is None:
+            gridlabd("nsrdb_weather",f"--signup={get_whoami()}")
+
+    def save_credentials(_):
+        if get_whoami() and get_apikey():
+            with open(credentials,"w") as fh:
+                json.dump(fh,{get_whoami():get_apikey()})
+
+    load_credentials()
+    return (
+        credentials,
+        load_credentials,
+        save_credentials,
+        send_registration,
+    )
+
+
+@app.cell
+def __(mo):
+    #
+    # UI state variables
+    #
+    get_csv, set_csv = mo.state(None)
+    get_fields, set_fields = mo.state(None)
+    get_glm, set_glm = mo.state(None)
+    get_whoami, set_whoami = mo.state(None)
+    get_apikey, set_apikey = mo.state(None)
+    return (
+        get_apikey,
+        get_csv,
+        get_fields,
+        get_glm,
+        get_whoami,
+        set_apikey,
+        set_csv,
+        set_fields,
+        set_glm,
+        set_whoami,
+    )
+
+
+@app.cell
+def __(get_fields, mo, setting_graphxaxis, setting_graphyaxis):
+    #
+    # Plotting options
+    #
+    xaxis = mo.ui.dropdown(options=get_fields() if get_fields() else [],label="X Axis",value=setting_graphxaxis.value if get_fields() else None)
+    yaxis = mo.ui.multiselect(options=get_fields() if get_fields() else [],label="Y Axis",value=[setting_graphyaxis.value] if get_fields() else None)
+    grid = mo.ui.switch(label="Grid")
+    marker = mo.ui.dropdown(options=["none",".","x","+","o","^","v"],value="none")
+    line = mo.ui.dropdown(options=["none","solid","dotted","dashed","dashdot"],value="solid")
+    return grid, line, marker, xaxis, yaxis
+
+
+@app.cell
+def __(
+    get_csv,
+    get_glm,
+    get_whoami,
+    grid,
+    gridlabd,
+    io,
+    line,
+    marker,
+    mo,
+    pd,
+    set_csv,
+    set_fields,
+    set_glm,
+    settings_credentials,
+    settings_weatherdata,
+    xaxis,
+    yaxis,
+):
+    #
+    # Weather preview
+    #
     def preview(_):
         data = io.StringIO(
-            "x,y\n0,1.23\n1,2.34\n2,3.45" # test data
-            # gridlabd("nsrdb_weather",
-            #             f"-y={year.value}",
-            #             f"-p={latitude.value},{longitude.value}")
+            gridlabd("nsrdb_weather",
+                     f"-y={year.value}",
+                     f"-p={latitude.value},{longitude.value}",
+                    )
         )
-        df = pd.read_csv(data,parse_dates=True,index_col=None)
-        set_data(df)
-        fields = list(df.columns)
-        print(fields)
-        # set_fields(mo.md("") if get_data() is None else mo.hstack([
-        #     mo.ui.dropdown(fields,label="Horizontal axis:"),
-        #     mo.ui.multiselect(fields,label="Vertical axis:"),
-        # ],justify='start'))
-        
+        df = pd.read_csv(data,parse_dates=True)
+        set_csv(df)
+        set_fields(list(df.columns))
+        gridlabd("nsrdb_weather",
+                 "--csv=weather.csv",
+                 "--glm=weather.glm",
+                 "--name=weather",
+                 f"-y={year.value}",
+                 f"-p={latitude.value},{longitude.value}",
+                )
+        with open("weather.glm","r") as glm:
+            set_glm(glm.read())
+
     def get_table():
-        data = get_data()
-        if data is None:
+        csv = get_csv()
+        if csv is None:
             return
-        return mo.ui.table(get_data(), page_size=24)
+        return mo.ui.table(get_csv(), page_size=24)
 
     def get_graph():
-        data = get_data()
-        if data is None:
+        csv = get_csv()
+        if csv is None:
             return
         return mo.vstack([
-            get_fields(),
-            get_data().plot()
+            mo.hstack([xaxis,yaxis,grid,line,marker],justify='start'),
+            csv.plot(figsize = (15,10),
+                     x = xaxis.value,
+                     y = yaxis.value,
+                     grid = grid.value,
+                     marker = marker.value,
+                     linestyle = line.value,
+                    ) 
+                if xaxis.value and yaxis.value else mo.md("Choose fields")
         ])
 
-    year = mo.ui.number(start=2000,stop=2020,label="Year:",value=2020)
-    latitude = mo.ui.text(label="Latitude:",value="37.5")
-    longitude = mo.ui.text(label="Longitude:",value="-122.3")
-    show = mo.ui.button(label="Refresh",on_click=preview)
+    def get_text():
+        glm = get_glm()
+        if glm is None:
+            return
+        return mo.ui.text_area(value = glm,
+                               full_width = True,
+                              )
+
+    table = get_table()
+    graph = get_graph()
+    text = get_text()
+
+    location = mo.ui.text(label = "Location (city, state)")
+    lookup = mo.ui.button(label = "Find")
+    year = mo.ui.number(start=2000, stop=2020, label="Year:", value=2020)
+    latitude = mo.ui.text(label="Latitude:", value="37.5")
+    longitude = mo.ui.text(label="Longitude:", value="-122.3")
+    preview = mo.ui.button(label="Preview", on_click=preview)
+    download = mo.download(label="Download", 
+                           data = get_glm() if get_glm() else "", 
+                           filename = "weather.glm", 
+                           disabled = (get_glm() is None), 
+                           mimetype = "text/plain")
+    nodata = mo.md("No data") if get_whoami() else "You must register with NSRDB first (see Settings)."
+
+    setting_weathername = mo.ui.text(label = "Weather object name", value = "weather")
+    settings_glmfile = mo.vstack([setting_weathername])
+
+    settings = mo.accordion({
+        "NSRDB Credentials" : settings_credentials,
+        "Weather Data" : settings_weatherdata,
+        "GLM File" : settings_glmfile,
+        })
+
+    body = mo.vstack([
+        mo.hstack([location,lookup],justify="start"),
+        mo.hstack([latitude,longitude,year,preview,download]),
+        mo.tabs({
+            "Graph" : graph if graph else nodata,
+            "Table" : table if table else nodata,
+            "GLM" : text if text else nodata,
+            "Settings" : settings,
+            }),
+    ])
+
+    mo.vstack([
+        body
+    ])
     return (
-        get_data,
-        get_fields,
+        body,
+        download,
         get_graph,
         get_table,
+        get_text,
+        graph,
         latitude,
+        location,
         longitude,
+        lookup,
+        nodata,
         preview,
-        set_data,
-        set_fields,
-        show,
+        setting_weathername,
+        settings,
+        settings_glmfile,
+        table,
+        text,
         year,
     )
 
 
 @app.cell
-def __(get_fields):
-    get_fields()
-    return
-
-
-@app.cell
-def __(get_graph, get_table, latitude, longitude, mo, show, year):
-    mo.vstack([
-        mo.hstack([latitude,longitude,year,show]),
-        mo.tabs({
-            "Table":get_table(),
-            "Graph":get_graph(),
-        }),
+def __(get_apikey, get_whoami, mo):
+    #
+    # NSRDB credentials settings
+    setting_email = mo.ui.text(label = "Registration email", 
+                               kind = "email", 
+                               placeholder = "user.name@company.org",
+                               value = get_whoami() if get_whoami() else "")
+    setting_apikey = mo.ui.text(label = "Registered API key", 
+                                kind = "password", 
+                                placeholder = "Paste API key here",
+                                value = get_apikey() if get_apikey() else "")
+    setting_register = mo.ui.button(label="Register")
+    settings_credentials = mo.vstack([
+        mo.hstack([setting_email,setting_register],justify='start'),
+        setting_apikey,
     ])
-    return
+
+
+    return (
+        setting_apikey,
+        setting_email,
+        setting_register,
+        settings_credentials,
+    )
 
 
 @app.cell
-def __(os, sp, sys):
-    last_stderr = None
-
-    def gridlabd(*args, binary=False, split=None,**kwargs):
-        """Run gridlabd
-        Arguments:
-        - *args: command arguments
-        - **kwargs: global definitions (placed before command arguments)
-        """
-        cmd = [
-            "gridlabd.bin" if binary and "GLD_BIN" in os.environ else "gridlabd"
-        ]
-        for name, value in kwargs.items():
-            cmd.extend(["-D", f"{name}={value}"])
-        cmd.extend(args)
-        print(f"[Running '{' '.join(cmd)}']",file=sys.stdout)
-        # with mo.status.spinner(f"Running command '{cmd}'"):
-        global last_stderr
-        last_stderr = None
-        r = sp.run(cmd, capture_output=True, text=True)
-        last_stderr = r.stderr
-        if r.returncode != 0:
-            raise Exception(f"gridlabd error code {r.returncode}")
-        print(f"[{len(r.stdout)} bytes received]",file=sys.stdout)
-        return r.stdout.strip().split(split if type(split) is str else "\n") if split else r.stdout
-    return gridlabd, last_stderr
+def __(mo):
+    #
+    # Weather graph settings
+    #
+    setting_graphxaxis = mo.ui.text(label = "Weather graph default x-axis", value = "datetime")
+    setting_graphyaxis = mo.ui.text(label = "Weather graph default y-axis", value = "temperature[degF]")
+    settings_weatherdata = mo.vstack([
+        setting_graphxaxis,
+        setting_graphyaxis,
+    ])
+    return setting_graphxaxis, setting_graphyaxis, settings_weatherdata
 
 
 @app.cell
 def __():
     import marimo as mo
-    import os, sys, io
+    import os, sys, io, json
     import subprocess as sp
     import pandas as pd
-    return io, mo, os, pd, sp, sys
+    from gridlabd_runner import gridlabd
+    return gridlabd, io, json, mo, os, pd, sp, sys
+
+
+@app.cell
+def __():
+    return
 
 
 if __name__ == "__main__":

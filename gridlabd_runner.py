@@ -29,9 +29,9 @@ _exitcode = {
    255 : "EXCEPTION",
 }
 
-def gridlabd(*args,**kwargs):
+def gridlabd(*args,split=None,**kwargs):
     gld = Gridlabd(*args,**kwargs)
-    return gld.result.stdout
+    return gld.result.stdout if not split else gld.result.stdout.strip().split(split if type(split) is str else "\n")
 
 class Gridlabd:
 
@@ -71,7 +71,7 @@ class Gridlabd:
         except:
             raise
         if self.result.returncode != 0:
-            raise GridlabdException(f"gridlabd.{_exitcode[self.result.returncode]}" 
+            raise GridlabdException(f"gridlabd.{_exitcode[self.result.returncode]} -- {self.result.stderr}" 
                 if self.result.returncode in _exitcode 
                 else f"gridlabd.EXITCODE {self.result.returncode}") 
 
