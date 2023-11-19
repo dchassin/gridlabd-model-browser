@@ -1,3 +1,4 @@
+"""GridLAB-D runner"""
 import os, sys
 import subprocess
 import time
@@ -30,6 +31,18 @@ _exitcode = {
 }
 
 def gridlabd(*args,split=None,**kwargs):
+    """Run gridlabd and return the output
+
+    Arguments:
+    - *args: gridlabd command line arguments
+    - **kwargs: gridlabd global definitions
+
+    Returns:
+    - str: stdout
+
+    Exceptions:
+    - GridlabdException(code,stderr)
+    """
     gld = Gridlabd(*args,**kwargs)
     return gld.result.stdout if not split else gld.result.stdout.strip().split(split if type(split) is str else "\n")
 
@@ -42,10 +55,23 @@ class Gridlabd:
             timeout = None,
             **kwargs,
             ):
+        """Construct a runner
+
+        Arguments:
+        - *args=[]: gridlabd command line arguments
+        - binary=True (bool=True): use the gridlabd binary if possible
+        - start=True (bool): start gridlabd immediately
+        - wait=True (bool): wait for gridlabd to complete
+        - timeout=None (float): seconds to wait for completion before failing
+        - **kwargs: gridlabd global definitions
+
+        Exceptions:
+        - GridlabdException(code,stderr)
+        """
         cmd = shutil.which("gridlabd.bin")
         cmd = cmd if cmd else shutil.which("gridlabd")
         if not cmd:
-            raise GridlabdException("gridlabd not found")
+            raise GridlabdException(-1,"gridlabd not found")
         self.command = [cmd]
         for name,value in kwargs.items():
             self.command.extend(["-D",f"{name}={value}"])
@@ -60,6 +86,18 @@ class Gridlabd:
             self.run(timeout=timeout)
 
     def run(self,timeout=None):
+        """Run gridlabd
+
+        Arguments:
+        - timeout=None (float): seconds to wait before for completion failing
+
+        Returns:
+        - str: output
+
+        Exceptions:
+        - GridlabdException(code,message)
+        - subprocess.TimeoutExpired
+        """
         try:
             self.result = subprocess.run(self.command, 
                 capture_output = True, 
@@ -74,20 +112,41 @@ class Gridlabd:
             raise GridlabdException(f"gridlabd.{_exitcode[self.result.returncode]} -- {self.result.stderr}" 
                 if self.result.returncode in _exitcode 
                 else f"gridlabd.EXITCODE {self.result.returncode}") 
+        return self.result.stdout
 
     def is_started(self):
+        """Check if gridlabd is started
+
+        Returns:
+        bool: gridlabd is started
+        """
         return not self.process is None
 
+    def is_running(self):
+        """Check if gridlabd is running
+
+        Returns:
+        bool: gridlabd is running
+        """
+        return not self.process is None and self.result is None
+        
     def is_completed(self):
+        """Check if gridlabd is done
+
+        Returns:
+        bool: process is completed
+        """
         return not self.result is None
 
     def start(self,wait=True):
+        """Start gridlabd"""
         if self.is_completed():
             raise GridlabdException("already completed")
         if self.is_started():
             raise GridlabdException("already started")
 
     def wait(self,timeout=None):
+        """Wait for gridlabd to complete"""
         if self.is_completed():
             raise GridlabdException("already completed")
 
@@ -97,23 +156,41 @@ if __name__ == '__main__':
 
     class TestGridlabd(unittest.TestCase):
 
-        def test_run(self):
-            self.assertTrue(gridlabd("--version").startswith("HiPAS GridLAB-D"))
+        def test_ok(self):
+            output = gridlabd("--version")
+            self.assertTrue(output.startswith("HiPAS GridLAB-D"))
 
-    # gld = Gridlabd("--version",binary=True)
-    # proc = gld.start(wait=False)
-    # while not gld.is_completed():
-    #     print("STDOUT",proc.stdout,file=sys.stdout,flush=True)
-    #     print("STDERR",proc.stderr,file=sys.stderr,flush=True)
-    #     print("RCODE ",proc.returncode,file=sys.stderr,flush=True)
-    #     time.sleep(1)
+        def test_err(self):
+            try:
+                output = gridlabd("--nogood")
+                msg = None
+            except GridlabdException as err:
+                msg = err.args
+            self.assertEqual(msg[0],5)
 
-    # run = Gridlabd("8500.glm","clock.glm","recorders.glm")
-    # run.start(wait=False)
-    # while not run.result:
-    #     print("STDOUT",run.output,file=sys.stdout,flush=True)
-    #     print("STDERR",run.errors,file=sys.stderr,flush=True)
-    #     time.sleep(1)
-    # run.wait()
+        def test_start(self):
+            try:
+                proc = Gridlabd("--version",start=False).start()
+                msg = None
+            except GridlabdException as err:
+                msg = err
+            self.assertEqual(msg.args[0],"already completed")
+
+        # def test_wait(self):
+        #     gld = Gridlabd("--version",wait=False)
+        #     try:
+        #         proc = gld.wait()
+        #         msg = None
+        #     except GridlabdException as err:
+        #         msg = err
+        #     self.assertEqual(msg.args[0],"already completed")
+
+        # run = Gridlabd("8500.glm","clock.glm","recorders.glm")
+        # run.start(wait=False)
+        # while not run.result:
+        #     print("STDOUT",run.output,file=sys.stdout,flush=True)
+        #     print("STDERR",run.errors,file=sys.stderr,flush=True)
+        #     time.sleep(1)
+        # run.wait()
 
     unittest.main()
