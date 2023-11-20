@@ -138,7 +138,6 @@ def __(
     get_df,
     get_glm,
     get_latitude,
-    get_location,
     get_longitude,
     get_whoami,
     grid,
@@ -147,6 +146,7 @@ def __(
     line,
     marker,
     mo,
+    np,
     pd,
     set_csv,
     set_df,
@@ -207,19 +207,17 @@ def __(
     def get_stats():
         if get_df() is None:
             return None
-        table = f"<table><caption>Weather statistics for {get_location().city}, {get_location().state} ({get_location().country})<hr/></caption><tr><th>Field</th><th>Minimum</th><th>Median</th><th>Mean</th><th>Stdev</th><th>Maximum</th></tr>"
+        data = dict(Field=[],Minimum=[],Median=[],Mean=[],Stdev=[],Maximum=[])
         for field in get_df().columns:
-            if field not in ["datetime"]:
-                X = get_df()[field]
-                table += f"<tr><th>{field}</th>"
-                table += f"<td>{X.min():.2f}</td>"
-                table += f"<td>{X.median():.2f}</td>"
-                table += f"<td>{X.mean():.2f}</td>"
-                table += f"<td>{X.std():.2f}</td>"
-                table += f"<td>{X.max():.2f}</td>"
-                table += f"</tr>"
-        table += f"</table>"
-        return mo.md(table)
+            X = get_df()[field]
+            if type(X.min()) in [np.float64,int]:
+                data["Field"].append(field)
+                data["Minimum"].append(X.min().round(2))
+                data["Median"].append(X.median().round(2))
+                data["Mean"].append(X.mean().round(2))
+                data["Stdev"].append(X.std().round(2))
+                data["Maximum"].append(X.max().round(2))
+        return mo.ui.table(pd.DataFrame(data))
 
     def get_text():
         glm = get_glm()
@@ -408,13 +406,28 @@ def __():
     import os, sys, io, json
     import subprocess as sp
     import pandas as pd
+    import numpy as np
     import geopy as gp
     import geocoder as gc
     from gridlabd_runner import gridlabd
 
     geolocator = gp.geocoders.Nominatim(user_agent="marimo")
     me = gc.ip('me')
-    return gc, geolocator, gp, gridlabd, io, json, me, mo, os, pd, sp, sys
+    return (
+        gc,
+        geolocator,
+        gp,
+        gridlabd,
+        io,
+        json,
+        me,
+        mo,
+        np,
+        os,
+        pd,
+        sp,
+        sys,
+    )
 
 
 @app.cell
